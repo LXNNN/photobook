@@ -1,0 +1,809 @@
+import type { Element, BookFormat, Page, ImageElement, TextElement, FontWeight, CropArea } from '@/types';
+import { generateId } from '@/utils/units';
+import { getRandomText, randomPick } from './copywriting';
+import { getTemplateCopyList } from './templateCopy';
+import { getThemeById } from './themes';
+
+/**
+ * 模板定义
+ * 元素坐标使用相对比例 (0-1)，应用时乘以页面实际尺寸
+ */
+export interface TemplateDefinition {
+  id: string;
+  name: string;
+  category: '封面尾页' | '图片为主' | '图文混排' | '多图拼贴' | '文字为主' | '特殊样式' | '我的模板';
+  description: string;
+  /** 缩略图用的 SVG 路径（用于模板面板预览） */
+  thumbnail: string;
+  /** 模板元素定义（相对坐标） */
+  elements: TemplateElement[];
+}
+
+export interface TemplateElement {
+  type: 'image' | 'text';
+  /** 相对位置和尺寸 (0-1) */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** 文字元素的默认内容 */
+  placeholder?: string;
+  /** 固定文字（不自动填充文案） */
+  fixed?: boolean;
+  /** 文字元素的默认字号（相对页面宽度的比例） */
+  fontSizeRatio?: number;
+  /** 文字对齐 */
+  textAlign?: 'left' | 'center' | 'right';
+  /** 字体粗细 */
+  fontWeight?: FontWeight;
+  /** 文字颜色 */
+  color?: string;
+  /** 图片元素的裁剪提示 */
+  cropHint?: 'cover' | 'contain';
+  /** 图片元素的裁剪区域（相对原图，0-1）；不填则铺满整张图 */
+  crop?: CropArea;
+  /** 元素透明度 0-1，不填按 1 处理 */
+  opacity?: number;
+  /** 文字旋转角度（度） */
+  rotation?: number;
+  /** 文字行高 */
+  lineHeight?: number;
+  /** 文字字体 */
+  fontFamily?: string;
+}
+
+/**
+ * 8 种常用排版模板
+ */
+export const TEMPLATES: TemplateDefinition[] = [
+  // ============ 封面/尾页 ============
+  {
+    id: 'cover-magazine',
+    name: '杂志封面',
+    category: '封面尾页',
+    description: '全幅大图+大标题+英文副标题，杂志风格封面',
+    thumbnail: 'cover-magazine',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 1, height: 1, cropHint: 'cover' },
+      // 顶部英文小字
+      { type: 'text', x: 0.1, y: 0.12, width: 0.8, height: 0.05, placeholder: 'TRAVEL DIARY', fontSizeRatio: 0.035, textAlign: 'center', color: '#ffffff' },
+      // 中间大标题
+      { type: 'text', x: 0.1, y: 0.28, width: 0.8, height: 0.12, placeholder: '在路上', fontSizeRatio: 0.09, textAlign: 'center', fontWeight: 'bold', color: '#ffffff' },
+      // 边框副标题
+      { type: 'text', x: 0.25, y: 0.42, width: 0.5, height: 0.05, placeholder: 'ADVENTURE AWAITS', fontSizeRatio: 0.028, textAlign: 'center', color: '#ffffff' },
+      // 作者名
+      { type: 'text', x: 0.1, y: 0.5, width: 0.8, height: 0.04, placeholder: '记录者', fontSizeRatio: 0.03, textAlign: 'center', color: '#ffffff' },
+      // 底部年份
+      { type: 'text', x: 0.1, y: 0.82, width: 0.8, height: 0.08, placeholder: '2026', fontSizeRatio: 0.06, textAlign: 'center', fontWeight: 'bold', color: '#ffffff' },
+    ],
+  },
+  {
+    id: 'cover-minimal',
+    name: '极简封面',
+    category: '封面尾页',
+    description: '左上角大标题，简洁高级，适合文艺风',
+    thumbnail: 'cover-minimal',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 1, height: 1, cropHint: 'cover' },
+      { type: 'text', x: 0.08, y: 0.15, width: 0.6, height: 0.1, placeholder: '时光印记', fontSizeRatio: 0.08, textAlign: 'left', fontWeight: 'bold', color: '#ffffff' },
+      { type: 'text', x: 0.08, y: 0.26, width: 0.5, height: 0.04, placeholder: 'MEMORIES', fontSizeRatio: 0.025, textAlign: 'left', color: '#ffffff' },
+      { type: 'text', x: 0.08, y: 0.85, width: 0.4, height: 0.04, placeholder: '2026', fontSizeRatio: 0.03, textAlign: 'left', color: '#ffffff' },
+    ],
+  },
+  {
+    id: 'cover-travel-journal',
+    name: '旅行杂志封面',
+    category: '封面尾页',
+    description: '白底大标题 + 满幅大图，左侧四角星与竖排 TIME 装饰，极简杂志风',
+    thumbnail: 'cover-travel-journal',
+    elements: [
+      // 照片（满幅大图，四周留白；顶部文字区加大、图片高度减小）
+      { type: 'image', x: 0.082, y: 0.431, width: 0.828, height: 0.506, cropHint: 'cover' },
+      // 右上大标题（可修改，右侧对齐基准）
+      { type: 'text', x: 0.667, y: 0.063, width: 0.256, height: 0.13, placeholder: '北欧\n旅行纪', fontSizeRatio: 0.11, textAlign: 'right', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1.05 },
+      // ——作者名（标题下方）
+      { type: 'text', x: 0.663, y: 0.228, width: 0.256, height: 0.025, placeholder: '——作者名', fontSizeRatio: 0.031, textAlign: 'right', color: '#888888', lineHeight: 1, fixed: true },
+      // 两个四角星（小、大，位于 TIME 上方）
+      { type: 'text', x: 0.102, y: 0.074, width: 0.034, height: 0.026, placeholder: '✦', fontSizeRatio: 0.041, textAlign: 'center', color: '#1a1a1a', lineHeight: 1, fixed: true },
+      { type: 'text', x: 0.136, y: 0.048, width: 0.046, height: 0.032, placeholder: '✦', fontSizeRatio: 0.055, textAlign: 'center', color: '#1a1a1a', lineHeight: 1, fixed: true },
+      // TIME 竖排：每个字母单独向右旋转 90°，衬线字体
+      { type: 'text', x: 0.126, y: 0.114, width: 0.062, height: 0.045, placeholder: 'T', fontSizeRatio: 0.167, textAlign: 'center', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1, rotation: 90, fontFamily: 'Georgia, "Times New Roman", serif', fixed: true },
+      { type: 'text', x: 0.129, y: 0.17, width: 0.062, height: 0.045, placeholder: 'I', fontSizeRatio: 0.167, textAlign: 'center', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1, rotation: 90, fontFamily: 'Georgia, "Times New Roman", serif', fixed: true },
+      { type: 'text', x: 0.129, y: 0.243, width: 0.062, height: 0.045, placeholder: 'M', fontSizeRatio: 0.167, textAlign: 'center', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1, rotation: 90, fontFamily: 'Georgia, "Times New Roman", serif', fixed: true },
+      { type: 'text', x: 0.09, y: 0.306, width: 0.091, height: 0.079, placeholder: 'E', fontSizeRatio: 0.167, textAlign: 'center', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1, rotation: 90, fontFamily: 'Georgia, "Times New Roman", serif', fixed: true },
+      // 标题下方中文小字（可修改，右侧与大标题对齐）
+      { type: 'text', x: 0.489, y: 0.274, width: 0.43, height: 0.018, placeholder: '・这一路的风景 ・从我的视角展开', fontSizeRatio: 0.029, textAlign: 'right', color: '#555555', lineHeight: 1, fixed: true },
+      // 对应英文大写（可修改，右侧对齐）
+      { type: 'text', x: 0.489, y: 0.296, width: 0.43, height: 0.015, placeholder: 'THE SCENERY ALONG THE WAY FROM MY PERSPECTIVE', fontSizeRatio: 0.017, textAlign: 'right', color: '#999999', lineHeight: 1, fixed: true },
+      // 见天地，见众生，见自己（可修改，右侧对齐）
+      { type: 'text', x: 0.489, y: 0.334, width: 0.43, height: 0.02, placeholder: '见天地，见众生，见自己', fontSizeRatio: 0.043, textAlign: 'right', color: '#555555', lineHeight: 1, fixed: true },
+      // 底部两行浅灰小字
+      { type: 'text', x: 0.2, y: 0.96, width: 0.6, height: 0.012, placeholder: 'CHERISH EVERY MOMENT', fontSizeRatio: 0.017, textAlign: 'center', color: '#c8c8c8', lineHeight: 1, fixed: true },
+      { type: 'text', x: 0.2, y: 0.973, width: 0.6, height: 0.012, placeholder: 'COLLECT BEAUTIFUL MEMORIES OF LIFE', fontSizeRatio: 0.017, textAlign: 'center', color: '#c8c8c8', lineHeight: 1, fixed: true },
+    ],
+  },
+  {
+    id: 'ending-page',
+    name: '结尾寄语',
+    category: '封面尾页',
+    description: '全幅大图+居中寄语，适合做尾页',
+    thumbnail: 'ending-page',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 1, height: 1, cropHint: 'cover' },
+      { type: 'text', x: 0.15, y: 0.3, width: 0.7, height: 0.1, placeholder: '未完待续', fontSizeRatio: 0.07, textAlign: 'center', fontWeight: 'bold', color: '#ffffff' },
+      { type: 'text', x: 0.2, y: 0.45, width: 0.6, height: 0.15, placeholder: '每一段旅程都是一次成长，期待下一次出发。', fontSizeRatio: 0.03, textAlign: 'center', color: '#ffffff' },
+      { type: 'text', x: 0.15, y: 0.7, width: 0.7, height: 0.05, placeholder: 'THANK YOU', fontSizeRatio: 0.025, textAlign: 'center', color: '#ffffff' },
+    ],
+  },
+
+  // ============ 图片为主 ============
+  {
+    id: 'full-image',
+    name: '单图满版',
+    category: '图片为主',
+    description: '一张大图铺满全页，底部留空间加文字',
+    thumbnail: 'full',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 1, height: 0.82, cropHint: 'cover' },
+      { type: 'text', x: 0.08, y: 0.85, width: 0.84, height: 0.1, placeholder: '在这里写标题', fontSizeRatio: 0.06, textAlign: 'center', fontWeight: 'bold', color: '#333333' },
+    ],
+  },
+  {
+    id: 'full-image-bordered',
+    name: '满版图（带边框）',
+    category: '图片为主',
+    description: '一张图填满页面，四周留白边框，无文案',
+    thumbnail: 'full-bordered',
+    elements: [
+      { type: 'image', x: 0.05, y: 0.05, width: 0.9, height: 0.9, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'image-top-text-bottom',
+    name: '上图下文',
+    category: '图文混排',
+    description: '上方大图，下方文字区域，经典旅行日记版式',
+    thumbnail: 'top-bottom',
+    elements: [
+      { type: 'image', x: 0.06, y: 0.05, width: 0.88, height: 0.55, cropHint: 'cover' },
+      { type: 'text', x: 0.1, y: 0.64, width: 0.8, height: 0.08, placeholder: '标题', fontSizeRatio: 0.055, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      { type: 'text', x: 0.1, y: 0.73, width: 0.8, height: 0.2, placeholder: '在这里写下你的故事和感受...', fontSizeRatio: 0.032, textAlign: 'left', color: '#666666' },
+    ],
+  },
+  // ============ 图文混排 ============
+  {
+    id: 'image-left-text-right',
+    name: '左图右文',
+    category: '图文混排',
+    description: '左侧图片，右侧文字，三段正文段间有空隙',
+    thumbnail: 'left-right',
+    elements: [
+      { type: 'image', x: 0.05, y: 0.08, width: 0.5, height: 0.84, cropHint: 'cover' },
+      { type: 'text', x: 0.6, y: 0.12, width: 0.35, height: 0.08, placeholder: '标题', fontSizeRatio: 0.06, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      { type: 'text', x: 0.6, y: 0.24, width: 0.35, height: 0.18, placeholder: '第一段...', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+      { type: 'text', x: 0.6, y: 0.44, width: 0.35, height: 0.18, placeholder: '第二段...', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+      { type: 'text', x: 0.6, y: 0.64, width: 0.35, height: 0.18, placeholder: '第三段...', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+    ],
+  },
+  {
+    id: 'text-left-image-right',
+    name: '左文右图',
+    category: '图文混排',
+    description: '左侧文字，右侧图片，三段正文段间有空隙',
+    thumbnail: 'right-left',
+    elements: [
+      { type: 'text', x: 0.08, y: 0.12, width: 0.337, height: 0.08, placeholder: '标题', fontSizeRatio: 0.06, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      { type: 'text', x: 0.08, y: 0.24, width: 0.337, height: 0.18, placeholder: '第一段...', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+      { type: 'text', x: 0.08, y: 0.44, width: 0.337, height: 0.18, placeholder: '第二段...', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+      { type: 'text', x: 0.08, y: 0.64, width: 0.337, height: 0.18, placeholder: '第三段...', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+      { type: 'image', x: 0.45, y: 0.08, width: 0.5, height: 0.84, cropHint: 'cover' },
+    ],
+  },
+  // ============ 多图拼贴 ============
+  {
+    id: 'two-images-stack',
+    name: '双图横板',
+    category: '多图拼贴',
+    description: '上下两张图片，中间留白，简洁干净',
+    thumbnail: 'two-stack',
+    elements: [
+      { type: 'image', x: 0.08, y: 0.05, width: 0.84, height: 0.42, cropHint: 'cover' },
+      { type: 'image', x: 0.08, y: 0.53, width: 0.84, height: 0.42, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'two-images-slanted',
+    name: '双图留白',
+    category: '多图拼贴',
+    description: '上下两张横图居中，大量留白，左上角配小字文案，文艺感强',
+    thumbnail: 'two-slanted',
+    elements: [
+      // 左上角小字文案（宽度缩小30%，与上图间距8mm）
+      { type: 'text', x: 0.12, y: 0.148, width: 0.532, height: 0.03, placeholder: '出发的意义从来都不是赶路', fontSizeRatio: 0.02, textAlign: 'left', color: '#999999' },
+      // 上方横图（下移，与下图间距5mm）
+      { type: 'image', x: 0.12, y: 0.216, width: 0.76, height: 0.32, cropHint: 'cover' },
+      // 下方横图（位置不变）
+      { type: 'image', x: 0.12, y: 0.56, width: 0.76, height: 0.32, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'three-collage',
+    name: '三图拼贴',
+    category: '多图拼贴',
+    description: '一大两小的杂志风拼贴，活泼有层次',
+    thumbnail: 'three-collage',
+    elements: [
+      { type: 'image', x: 0.05, y: 0.05, width: 0.599, height: 0.55, cropHint: 'cover' },
+      { type: 'image', x: 0.67, y: 0.05, width: 0.28, height: 0.267, cropHint: 'cover' },
+      { type: 'image', x: 0.67, y: 0.329, width: 0.28, height: 0.271, cropHint: 'cover' },
+      { type: 'text', x: 0.074, y: 0.64, width: 0.84, height: 0.08, placeholder: '与你有关', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      { type: 'text', x: 0.08, y: 0.74, width: 0.84, height: 0.18, placeholder: '生活碎片，拼凑成光', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+    ],
+  },
+  {
+    id: 'three-collage-v2',
+    name: '三图错落',
+    category: '多图拼贴',
+    description: '左上大图+右上文字小图+底部横图，层次丰富',
+    thumbnail: 'three-collage-v2',
+    elements: [
+      // 左上大图
+      { type: 'image', x: 0.05, y: 0.05, width: 0.55, height: 0.55, cropHint: 'cover' },
+      // 右上角标题
+      { type: 'text', x: 0.64, y: 0.06, width: 0.31, height: 0.06, placeholder: '慢慢生活', fontSizeRatio: 0.045, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      // 右上角正文
+      { type: 'text', x: 0.64, y: 0.14, width: 0.31, height: 0.15, placeholder: '岁月悠长，愿我们都能在这平凡的日子里，找到属于自己的那束光，慢慢生活，好好感受每一个当下。', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+      // 右中竖版小图
+      { type: 'image', x: 0.624, y: 0.32, width: 0.326, height: 0.28, cropHint: 'cover' },
+      // 底部横版大图
+      { type: 'image', x: 0.05, y: 0.624, width: 0.9, height: 0.326, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'four-grid',
+    name: '四图网格',
+    category: '多图拼贴',
+    description: '2x2 均匀网格，适合展示系列照片',
+    thumbnail: 'four-grid',
+    elements: [
+      { type: 'image', x: 0.05, y: 0.05, width: 0.43, height: 0.43, cropHint: 'cover' },
+      { type: 'image', x: 0.52, y: 0.05, width: 0.43, height: 0.43, cropHint: 'cover' },
+      { type: 'image', x: 0.05, y: 0.52, width: 0.43, height: 0.43, cropHint: 'cover' },
+      { type: 'image', x: 0.52, y: 0.52, width: 0.43, height: 0.43, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'four-magazine',
+    name: '四图杂志风',
+    category: '多图拼贴',
+    description: '左大右小错落布局，杂志感十足',
+    thumbnail: 'four-magazine',
+    elements: [
+      // 左上大图
+      { type: 'image', x: 0.05, y: 0.05, width: 0.62, height: 0.55, cropHint: 'cover' },
+      // 右上小图1
+      { type: 'image', x: 0.70, y: 0.05, width: 0.25, height: 0.266, cropHint: 'cover' },
+      // 右上小图2
+      { type: 'image', x: 0.70, y: 0.335, width: 0.25, height: 0.265, cropHint: 'cover' },
+      // 左下横图
+      { type: 'image', x: 0.05, y: 0.624, width: 0.90, height: 0.326, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'four-grid-whitespace',
+    name: '四图留白',
+    category: '多图拼贴',
+    description: '2x2田字格四张图，四周大量留白，底部配标题和正文，文艺感强',
+    thumbnail: 'four-grid-ws',
+    elements: [
+      // 左上
+      { type: 'image', x: 0.12, y: 0.08, width: 0.368, height: 0.314, cropHint: 'cover' },
+      // 右上
+      { type: 'image', x: 0.512, y: 0.08, width: 0.368, height: 0.314, cropHint: 'cover' },
+      // 左下
+      { type: 'image', x: 0.12, y: 0.411, width: 0.368, height: 0.314, cropHint: 'cover' },
+      // 右下
+      { type: 'image', x: 0.512, y: 0.411, width: 0.368, height: 0.314, cropHint: 'cover' },
+      // 底部标题（右下角）
+      { type: 'text', x: 0.5, y: 0.78, width: 0.38, height: 0.05, placeholder: '标题', fontSizeRatio: 0.045, textAlign: 'right', fontWeight: 'bold', color: '#2c2c2c' },
+      // 底部正文（左下角）
+      { type: 'text', x: 0.12, y: 0.84, width: 0.5, height: 0.12, placeholder: '在这里写下你的故事和感受...', fontSizeRatio: 0.024, textAlign: 'left', color: '#666666' },
+    ],
+  },
+  {
+    id: 'four-left3-right1',
+    name: '四图三小一大',
+    category: '多图拼贴',
+    description: '左列三张小竖图，右列一张大图，底部带文案',
+    thumbnail: 'four-left3-right1',
+    elements: [
+      // 左列三张小图（紧凑一点）
+      { type: 'image', x: 0.08, y: 0.06, width: 0.32, height: 0.20, cropHint: 'cover' },
+      { type: 'image', x: 0.08, y: 0.28, width: 0.32, height: 0.20, cropHint: 'cover' },
+      { type: 'image', x: 0.08, y: 0.50, width: 0.32, height: 0.20, cropHint: 'cover' },
+      // 右边大图（左右缝隙缩小）
+      { type: 'image', x: 0.42, y: 0.06, width: 0.50, height: 0.64, cropHint: 'cover' },
+      // 底部标题
+      { type: 'text', x: 0.08, y: 0.74, width: 0.84, height: 0.05, placeholder: '标题', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      // 底部正文（区域大一点）
+      { type: 'text', x: 0.08, y: 0.80, width: 0.84, height: 0.16, placeholder: '写点什么...', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+    ],
+  },
+  // ============ 文字为主 ============
+  {
+    id: 'text-cover',
+    name: '文字封面',
+    category: '文字为主',
+    description: '大标题+副标题，适合做封面或章节页',
+    thumbnail: 'text-cover',
+    elements: [
+      { type: 'text', x: 0.1, y: 0.3, width: 0.8, height: 0.15, placeholder: '大标题', fontSizeRatio: 0.1, textAlign: 'center', fontWeight: 'bold', color: '#2c2c2c' },
+      { type: 'text', x: 0.15, y: 0.48, width: 0.7, height: 0.08, placeholder: '副标题 / 日期', fontSizeRatio: 0.04, textAlign: 'center', color: '#888888' },
+      { type: 'text', x: 0.2, y: 0.62, width: 0.6, height: 0.15, placeholder: '一段简短的引言或寄语...', fontSizeRatio: 0.028, textAlign: 'center', color: '#666666' },
+    ],
+  },
+  // ============ 特殊样式 ============
+  {
+    id: 'dual-portrait',
+    name: '双图竖版',
+    category: '图文混排',
+    description: '两张竖版照片并列，上下加标题和文案',
+    thumbnail: 'dual-portrait',
+    elements: [
+      // 顶部小标签（固定文字，不填充文案）
+      { type: 'text', x: 0.08, y: 0.06, width: 0.2, height: 0.03, placeholder: '旅行碎片', fontSizeRatio: 0.02, textAlign: 'left', color: '#999999', fixed: true },
+      // 大标题
+      { type: 'text', x: 0.08, y: 0.12, width: 0.6, height: 0.08, placeholder: '这里写标题', fontSizeRatio: 0.06, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      // 左图
+      { type: 'image', x: 0.08, y: 0.24, width: 0.42, height: 0.58, cropHint: 'cover' },
+      // 右图
+      { type: 'image', x: 0.5, y: 0.24, width: 0.42, height: 0.58, cropHint: 'cover' },
+      // 正文
+      { type: 'text', x: 0.08, y: 0.86, width: 0.5, height: 0.1, placeholder: '在这里写下你的故事和感受...', fontSizeRatio: 0.022, textAlign: 'left', color: '#666666' },
+    ],
+  },
+  {
+    id: 'five-collage',
+    name: '五图拼贴',
+    category: '多图拼贴',
+    description: '左列2张+右列3张，适合旅行记录',
+    thumbnail: 'five-collage',
+    elements: [
+      // 左上竖版大图
+      { type: 'image', x: 0.05, y: 0.05, width: 0.451, height: 0.381, cropHint: 'cover' },
+      // 左下横版图
+      { type: 'image', x: 0.05, y: 0.454, width: 0.451, height: 0.381, cropHint: 'cover' },
+      // 右上横版图
+      { type: 'image', x: 0.53, y: 0.05, width: 0.42, height: 0.248, cropHint: 'cover' },
+      // 右中横版图
+      { type: 'image', x: 0.53, y: 0.319, width: 0.42, height: 0.248, cropHint: 'cover' },
+      // 右下横版图
+      { type: 'image', x: 0.53, y: 0.588, width: 0.42, height: 0.248, cropHint: 'cover' },
+      // 底部标题
+      { type: 'text', x: 0.05, y: 0.887, width: 0.9, height: 0.04, placeholder: '在这里写标题', fontSizeRatio: 0.04, textAlign: 'center', fontWeight: 'bold', color: '#2c2c2c' },
+    ],
+  },
+];
+
+/**
+ * 将模板应用到页面，生成实际元素
+ * @param template 模板定义
+ * @param format 页面格式
+ * @param existingImageIds 可用的图片ID列表（按顺序填充模板中的图片位）
+ * @param themeId 主题ID（旅行/日常用模板文案，其他主题用主题文案）
+ */
+export function applyTemplate(
+  template: TemplateDefinition,
+  format: BookFormat,
+  existingImageIds: string[] = [],
+  themeId: string = 'travel'
+): Element[] {
+  let imageIndex = 0;
+  const elements: Element[] = [];
+
+  // 旅行/日常主题用模板文案库，其他主题用主题文案库
+  const useThemeCopy = themeId !== 'travel' && themeId !== 'daily';
+  const theme = useThemeCopy ? getThemeById(themeId) : undefined;
+
+  // 获取模板对应的文案（仅旅行/日常主题用）
+  const templateCopyList = !useThemeCopy ? getTemplateCopyList(template.id) : undefined;
+  let paragraphIndex = 0; // 用于三段正文模板
+  let bodyPickIndex = 0; // 用于从文案库随机选多条正文
+
+  // 预随机选三条文案，用于多正文位置的模板（比如左图右文）
+  let pickedBodies: string[] = [];
+  if (templateCopyList && templateCopyList.length > 0 && !templateCopyList[0].paragraphs) {
+    // 从文案库里随机选3条不重复的正文
+    const shuffled = [...templateCopyList].sort(() => Math.random() - 0.5);
+    pickedBodies = shuffled.slice(0, 3).map(item => item.body);
+  }
+
+  // 主题模式下，预随机选3条正文
+  let themePickedBodies: string[] = [];
+  if (theme) {
+    const shuffled = [...theme.paragraphs].sort(() => Math.random() - 0.5);
+    themePickedBodies = shuffled.slice(0, 3);
+  }
+
+  for (let i = 0; i < template.elements.length; i++) {
+    const tplEl = template.elements[i];
+    const base = {
+      id: generateId(),
+      x: tplEl.x * format.width,
+      y: tplEl.y * format.height,
+      width: tplEl.width * format.width,
+      height: tplEl.height * format.height,
+      rotation: tplEl.rotation ?? 0,
+      opacity: tplEl.opacity ?? 1,
+      zIndex: i,
+    };
+
+    if (tplEl.type === 'image') {
+      const imageId = existingImageIds[imageIndex] || '';
+      imageIndex++;
+      elements.push({
+        ...base,
+        type: 'image',
+        imageId,
+        // 拷贝一份，避免多个页面共用同一个 crop 对象
+        crop: tplEl.crop ? { ...tplEl.crop } : { x: 0, y: 0, width: 1, height: 1 },
+      });
+    } else {
+      // 根据模板文案填充
+      const fontSizeRatio = tplEl.fontSizeRatio || 0.03;
+      let content: string;
+      let actualFontSizeRatio = fontSizeRatio;
+
+      // 固定文字（比如装饰小标签）保持原样，不填充文案
+      if ((tplEl as any).fixed) {
+        content = tplEl.placeholder || '';
+      } else if (theme) {
+        // 主题模式：从主题文案库里取
+        const isTitle = fontSizeRatio >= 0.04;
+        if (isTitle) {
+          content = randomPick(theme.pageTitles);
+        } else if (tplEl.placeholder && tplEl.placeholder.length <= 4) {
+          content = tplEl.placeholder;
+        } else {
+          // 正文：如果是多正文位置的模板，按顺序取预选的3条
+          if (themePickedBodies.length > 1) {
+            content = themePickedBodies[bodyPickIndex] || '';
+            bodyPickIndex++;
+          } else {
+            content = randomPick(theme.paragraphs);
+          }
+          actualFontSizeRatio = 0.029;
+        }
+      } else if (templateCopyList && templateCopyList.length > 0) {
+        // 模板文案模式（旅行/日常主题）
+        // 随机选一条文案
+        const randomCopy = randomPick(templateCopyList);
+        // 判断是标题还是正文
+        const isTitle = fontSizeRatio >= 0.04;
+        if (isTitle) {
+          // 标题：用随机选的那条文案的标题
+          content = randomCopy.title || tplEl.placeholder || '';
+        } else if (tplEl.placeholder && tplEl.placeholder.length <= 4) {
+          // 短占位符（比如"旅行碎片"这种小标签）保持原样，不填充文案
+          content = tplEl.placeholder;
+        } else {
+          // 正文：如果预选了多条正文（多正文位置模板），按顺序取
+          if (pickedBodies.length > 0) {
+            content = pickedBodies[bodyPickIndex] || '';
+            bodyPickIndex++;
+          } else if (randomCopy.paragraphs && Array.isArray(randomCopy.paragraphs)) {
+            // 单条文案里的多段正文
+            content = randomCopy.paragraphs[paragraphIndex] || '';
+            paragraphIndex++;
+          } else {
+            content = randomCopy.body || tplEl.placeholder || '';
+          }
+          // 只有我们指定的模板，正文才统一改成12号
+          actualFontSizeRatio = 0.029;
+        }
+      } else {
+        // 没有对应文案库的模板，用原来的随机文案，字号也保持原样
+        const isBig = fontSizeRatio >= 0.08;
+        const isSub = fontSizeRatio >= 0.04 && fontSizeRatio < 0.08;
+        const isShort = fontSizeRatio < 0.03;
+        content = tplEl.placeholder !== undefined ? tplEl.placeholder : getRandomText(isBig, isSub, isShort);
+      }
+
+      elements.push({
+        ...base,
+        type: 'text',
+        content,
+        fontSize: Math.round(actualFontSizeRatio * format.width * 2.83), // mm转pt近似
+        fontFamily: tplEl.fontFamily || 'sans-serif',
+        fontWeight: tplEl.fontWeight ?? 'normal',
+        color: tplEl.color || '#333333',
+        textAlign: tplEl.textAlign || 'left',
+        lineHeight: tplEl.lineHeight ?? 1.5,
+        letterSpacing: 0,
+        fixed: (tplEl as any).fixed || false,
+      });
+    }
+  }
+
+  return elements;
+}
+
+/**
+ * 按 id 获取模板定义
+ */
+export function getTemplateById(id: string): TemplateDefinition | undefined {
+  return TEMPLATES.find((t) => t.id === id);
+}
+
+// ==================== 模板库变更订阅 ====================
+// 模板库是模块级的可变数组，React 改不动也看不见它的变化。
+// 组件用 useSyncExternalStore(subscribeTemplates, getTemplatesVersion) 订阅版本号，
+// 才能在内置数据被增/删/改之后重新渲染。
+
+const templateListeners = new Set<() => void>();
+let templateVersion = 0;
+
+function notifyTemplatesChanged(): void {
+  templateVersion++;
+  templateListeners.forEach((fn) => fn());
+}
+
+/** 订阅模板库变更，返回取消订阅函数（配合 useSyncExternalStore） */
+export function subscribeTemplates(fn: () => void): () => void {
+  templateListeners.add(fn);
+  return () => {
+    templateListeners.delete(fn);
+  };
+}
+
+/** 模板库版本号，每次增删改 +1 */
+export function getTemplatesVersion(): number {
+  return templateVersion;
+}
+
+/**
+ * 用自定义模板覆盖同 id 的内置模板（用户"保存模板"后调用）
+ * id 不存在时作为新模板追加（"新增模板"）
+ */
+export function applyCustomTemplate(template: TemplateDefinition): void {
+  const idx = TEMPLATES.findIndex((t) => t.id === template.id);
+  if (idx !== -1) {
+    TEMPLATES[idx] = template;
+  } else {
+    TEMPLATES.push(template);
+  }
+  CUSTOM_TEMPLATE_IDS.add(template.id);
+  notifyTemplatesChanged();
+}
+
+/** 已被用户自定义覆盖过的模板 id 集合 */
+const CUSTOM_TEMPLATE_IDS = new Set<string>();
+
+/** 该模板是否存在用户保存过的自定义版本（决定"恢复默认"是否有意义） */
+export function hasCustomTemplate(id: string | undefined): boolean {
+  return !!id && CUSTOM_TEMPLATE_IDS.has(id);
+}
+
+// 内置模板快照（模块加载时保存，作为"恢复默认"的来源）
+const BUILTIN_TEMPLATES: TemplateDefinition[] = JSON.parse(JSON.stringify(TEMPLATES));
+
+/** 是否是内置模板（内置模板被删除要记墓碑，否则刷新后又回来了） */
+export function isBuiltinTemplate(id: string): boolean {
+  return BUILTIN_TEMPLATES.some((t) => t.id === id);
+}
+
+/**
+ * 恢复内置模板（用户"恢复默认"后调用）
+ * 该模板若已被删除，会一并重新加回模板库
+ * @returns 是否成功还原（false 表示该 id 不是内置模板，如用户新建的模板）
+ */
+export function restoreBuiltinTemplate(id: string): boolean {
+  const builtin = BUILTIN_TEMPLATES.find((t) => t.id === id);
+  CUSTOM_TEMPLATE_IDS.delete(id);
+  if (!builtin) return false;
+
+  const restored: TemplateDefinition = JSON.parse(JSON.stringify(builtin));
+  const idx = TEMPLATES.findIndex((t) => t.id === id);
+  if (idx !== -1) {
+    TEMPLATES[idx] = restored;
+  } else {
+    TEMPLATES.push(restored);
+  }
+  notifyTemplatesChanged();
+  return true;
+}
+
+/**
+ * 从模板库移除模板（只动内存，持久化由 utils/templateLibrary 负责）
+ * @returns 被移除的模板；id 不存在时返回 undefined
+ */
+export function removeTemplate(id: string): TemplateDefinition | undefined {
+  const idx = TEMPLATES.findIndex((t) => t.id === id);
+  if (idx === -1) return undefined;
+  const [removed] = TEMPLATES.splice(idx, 1);
+  CUSTOM_TEMPLATE_IDS.delete(id);
+  notifyTemplatesChanged();
+  return removed;
+}
+
+// ==================== 页面 ↔ 模板 互转 ====================
+
+/**
+ * 页面元素（绝对 mm）→ 模板元素（相对比例）
+ */
+export function pageElementsToTemplateElements(
+  elements: Element[],
+  format: BookFormat
+): TemplateElement[] {
+  return elements
+    .filter((el) => el.type === 'image' || el.type === 'text')
+    .map((el) => {
+      const base: TemplateElement = {
+        type: el.type === 'image' ? 'image' : 'text',
+        x: el.x / format.width,
+        y: el.y / format.height,
+        width: el.width / format.width,
+        height: el.height / format.height,
+      };
+      // 透明度只在不透明时省略，保持模板数据干净
+      if (el.opacity !== 1) base.opacity = el.opacity;
+
+      if (el.type === 'image') {
+        const img = el as ImageElement;
+        base.cropHint = 'cover';
+        base.crop = { ...img.crop };
+        return base;
+      }
+
+      const text = el as TextElement;
+      const t: TemplateElement = {
+        ...base,
+        placeholder: text.content,
+        fontSizeRatio: text.fontSize / (format.width * 2.83),
+        textAlign: text.textAlign,
+        fontWeight: text.fontWeight,
+        color: text.color,
+        lineHeight: text.lineHeight,
+      };
+      if (text.fontFamily && text.fontFamily !== 'sans-serif') t.fontFamily = text.fontFamily;
+      if (text.rotation) t.rotation = text.rotation;
+      // 固定文字标记也要写回，否则「新建模板」存下来的模板会丢掉它，
+      // 下次用这个模板时这些装饰文字会被填上随机文案
+      if (text.fixed) t.fixed = true;
+      return t;
+    });
+}
+
+/** 匹配容差：页面尺寸的 1%，另加 0.5mm 兜底 */
+const MATCH_TOLERANCE_RATIO = 0.01;
+const MATCH_TOLERANCE_MM = 0.5;
+
+function withinTolerance(a: number, b: number, pageSize: number): boolean {
+  return Math.abs(a - b) <= Math.max(pageSize * MATCH_TOLERANCE_RATIO, MATCH_TOLERANCE_MM);
+}
+
+/**
+ * 反查页面来自哪个模板：按元素类型 + 相对几何位置做贪心匹配。
+ * 用于给没有记录 templateId 的老页面找回模板（"保存模板"回写的前提）。
+ * 只比几何、不比文字内容，因此改过文案/字体/颜色的页面仍能匹配上。
+ */
+export function matchTemplateForPage(
+  page: Page,
+  format: BookFormat
+): TemplateDefinition | undefined {
+  const candidates = page.elements.filter((el) => el.type === 'image' || el.type === 'text');
+  if (candidates.length === 0) return undefined;
+
+  let best: { template: TemplateDefinition; score: number } | undefined;
+
+  for (const template of TEMPLATES) {
+    if (template.elements.length !== candidates.length) continue;
+
+    const used = new Array(candidates.length).fill(false);
+    let score = 0;
+    let matchedAll = true;
+
+    for (const tplEl of template.elements) {
+      const tplX = tplEl.x * format.width;
+      const tplY = tplEl.y * format.height;
+      const tplW = tplEl.width * format.width;
+      const tplH = tplEl.height * format.height;
+
+      let hit = -1;
+      let hitDist = Infinity;
+      for (let i = 0; i < candidates.length; i++) {
+        if (used[i] || candidates[i].type !== tplEl.type) continue;
+        const el = candidates[i];
+        if (!withinTolerance(el.x, tplX, format.width)) continue;
+        if (!withinTolerance(el.y, tplY, format.height)) continue;
+        if (!withinTolerance(el.width, tplW, format.width)) continue;
+        if (!withinTolerance(el.height, tplH, format.height)) continue;
+        const dist =
+          Math.abs(el.x - tplX) + Math.abs(el.y - tplY) +
+          Math.abs(el.width - tplW) + Math.abs(el.height - tplH);
+        if (dist < hitDist) {
+          hitDist = dist;
+          hit = i;
+        }
+      }
+
+      if (hit === -1) {
+        matchedAll = false;
+        break;
+      }
+      used[hit] = true;
+      score += hitDist;
+    }
+
+    if (matchedAll && (!best || score < best.score)) {
+      best = { template, score };
+    }
+  }
+
+  return best?.template;
+}
+
+/**
+ * 用页面当前样式生成一个新模板（页面反查不到模板时的"存为新模板"）
+ */
+export function createTemplateFromPage(
+  page: Page,
+  format: BookFormat,
+  name: string
+): TemplateDefinition {
+  return {
+    id: `custom-${generateId()}`,
+    name,
+    category: '我的模板',
+    description: '由页面样式保存的自定义模板',
+    thumbnail: '',
+    elements: pageElementsToTemplateElements(page.elements, format),
+  };
+}
+
+/**
+ * 用模板重新生成页面元素，但保留页面上已有的文字内容与图片
+ * （"恢复默认"时使用：还原默认排版样式，不丢用户填的内容）
+ */
+export function reapplyTemplateKeepingContent(
+  template: TemplateDefinition,
+  format: BookFormat,
+  page: Page,
+  themeId: string = 'travel'
+): Element[] {
+  const oldElements = page.elements.filter((el) => el.type === 'image' || el.type === 'text');
+  const imageIds = oldElements
+    .filter((el) => el.type === 'image')
+    .map((el) => (el as ImageElement).imageId);
+  const oldTexts = oldElements.filter((el) => el.type === 'text') as TextElement[];
+
+  const fresh = applyTemplate(template, format, imageIds, themeId);
+
+  let textIndex = 0;
+  for (const el of fresh) {
+    if (el.type !== 'text') continue;
+    const old = oldTexts[textIndex];
+    if (old?.content) (el as TextElement).content = old.content;
+    textIndex++;
+  }
+  return fresh;
+}
+
+/**
+ * 获取模板分类列表
+ */
+export function getTemplateCategories(): string[] {
+  return Array.from(new Set(TEMPLATES.map((t) => t.category)));
+}
+
+/**
+ * 隐藏的模板 id 列表（不显示在模板面板，以后可能再开放）
+ */
+const HIDDEN_TEMPLATE_IDS = ['full-image'];
+
+/**
+ * 按分类获取模板
+ */
+export function getTemplatesByCategory(category: string): TemplateDefinition[] {
+  return TEMPLATES.filter((t) => t.category === category && !HIDDEN_TEMPLATE_IDS.includes(t.id));
+}
