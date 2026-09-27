@@ -527,6 +527,14 @@ export class InteractionManager {
 
     // 如果拖拽到了另一个图片上，触发调换位置
     if (this.mode === 'drag' && this.hoverTargetId && this.startElement) {
+      // 换位前先把元素放回拖拽起点。
+      // 拖拽过程中它一直跟着鼠标走（hover 到目标图片之后才停下），要是就这么换，
+      // 被换过来的那张会落在"漂移后停住的位置"上，而它自己的原位反倒空着 ——
+      // 换位要的是两张照片互换格子，不是拖到哪儿算哪儿。
+      this.onElementChange?.(this.startElement.id, {
+        x: this.startElement.x,
+        y: this.startElement.y,
+      });
       this.onSwapImages?.(this.startElement.id, this.hoverTargetId);
     }
 

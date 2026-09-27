@@ -55,14 +55,14 @@ export default function TemplatePanel({ format, onApplied }: Props) {
     const extraImages = allImageIds.slice(neededSlots);
 
     // 应用模板到当前页（记录模板 ID，支持"保存模板"回写）
-    const elements = applyTemplate(template, format, currentPageImages, project.themeId);
+    const elements = applyTemplate(template, format, currentPageImages, project.themeId, project.bodyFontSize || 12);
     dispatch(replacePageElements({ pageIndex: currentPageIndex, elements, templateId: template.id }));
 
     // 如果有多出来的图片，在当前页后面插入新页
     if (extraImages.length > 0) {
       // 用多图模板放多余图片
       const extraTemplate = TEMPLATES.find((t) => t.id === 'two-images-stack')!;
-      const extraElements = applyTemplate(extraTemplate, format, extraImages, project.themeId);
+      const extraElements = applyTemplate(extraTemplate, format, extraImages, project.themeId, project.bodyFontSize || 12);
       dispatch(addPage({ afterIndex: currentPageIndex, elements: extraElements }));
     }
 

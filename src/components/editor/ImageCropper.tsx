@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { ImageElement } from '@/types';
+import { fitCropToRatio } from '@/utils/image';
 
 interface Props {
   element: ImageElement;
@@ -49,10 +50,14 @@ export default function ImageCropper({ element, imageUrl, onConfirm, onClose }: 
       let cropY = (img.height - cropH) / 2;
 
       if (hasCustomCrop) {
-        cropX = element.crop.x * img.width;
-        cropY = element.crop.y * img.height;
-        cropW = element.crop.width * img.width;
-        cropH = element.crop.height * img.height;
+        // 裁剪框的形状必须跟着元素走。存下来的框万一是按别的形状裁的（换过位、
+        // 元素被缩放过、老数据），这里掰回来，否则对话框会显示成一个跟当前
+        // 图片区域对不上的形状。比例本来就配得上的话是恒等变换。
+        const fit = fitCropToRatio(element.crop, img.width, img.height, elementRatio);
+        cropX = fit.x * img.width;
+        cropY = fit.y * img.height;
+        cropW = fit.width * img.width;
+        cropH = fit.height * img.height;
       }
 
       setCropRect({ x: cropX, y: cropY, w: cropW, h: cropH });

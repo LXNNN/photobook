@@ -154,6 +154,30 @@ export const FIVE_COLLAGE_TEXTS = [
   { title: '把日子过成诗', body: '把日子过成诗' },
 ];
 
+// ============ 九宫格头像（小标题 + 30-50字正文，2-3行） ============
+export const NINE_GRID_AVATAR_TEXTS = [
+  {
+    title: '朋友圈精选',
+    body: '九张图，一段时光。把生活里的小确幸都收集起来，拼成属于我们的独家记忆。每一张都是故事。'
+  },
+  {
+    title: '日常碎片',
+    body: '生活不是赶路，而是感受路。那些细碎的瞬间，拼凑成了完整的日子。记录下来，就是最好的时光。'
+  },
+  {
+    title: '时光相册',
+    body: '把每一个平凡的日子都过成诗。一杯咖啡、一阵微风、一个微笑，都是值得收藏的小美好。'
+  },
+  {
+    title: '一路生花',
+    body: '走过的路，看过的风景，遇见的人，都在悄悄塑造着我们。愿你眼里有光，心中有爱，脚下有路。'
+  },
+  {
+    title: '人间值得',
+    body: '生活总有不期而遇的温柔，和生生不息的希望。把这些瞬间都收藏起来，在往后的日子里慢慢回味。'
+  },
+];
+
 // ============ 模板文案映射表 ============
 export const TEMPLATE_COPY_MAP: Record<string, any[]> = {
   'image-top-text-bottom': IMAGE_TOP_TEXT_BOTTOM_TEXTS,
@@ -166,6 +190,7 @@ export const TEMPLATE_COPY_MAP: Record<string, any[]> = {
   'four-left3-right1': THREE_COLLAGE_TEXTS,
   'four-grid-whitespace': FOUR_GRID_WHITESPACE_TEXTS,
   'five-collage': FIVE_COLLAGE_TEXTS,
+  'nine-grid-avatar': NINE_GRID_AVATAR_TEXTS,
 };
 
 // ============ 工具函数 ============

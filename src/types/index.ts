@@ -11,6 +11,8 @@ export interface Project {
   version: number;
   /** 主题ID（旅行/生日/情侣等），用于切换模板时取对应文案 */
   themeId?: string;
+  /** 正文字号（pt），默认12，可选14，用于所有模板正文和新添加文字 */
+  bodyFontSize?: number;
 }
 
 export interface BookFormat {

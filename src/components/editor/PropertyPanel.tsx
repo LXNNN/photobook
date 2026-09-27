@@ -26,6 +26,11 @@ export default function PropertyPanel({ page, pageIndex, selectedIds }: Props) {
   const dispatch = useAppDispatch();
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
 
+  // 页面不存在时（比如刚删除了当前页），不渲染属性面板，避免白屏
+  if (!page || !page.elements) {
+    return null;
+  }
+
   const selectedElement = selectedIds.length === 1
     ? page.elements.find((el) => el.id === selectedIds[0])
     : null;
@@ -377,12 +382,20 @@ function ImagePropertyPanel({ el, pageIndex, onUpdate }: ImagePanelProps) {
 
   // 加载当前图片 URL
   useEffect(() => {
-    if (!el.imageId) return;
+    // 换到还没填照片的元素上（模板留下的空图片区域）必须把 URL 清掉。
+    // 这个面板没带 key，切元素时不会重挂载，留着上一张的 URL 的话，
+    // 预览图和裁剪框里都会是上一张照片
+    if (!el.imageId) {
+      setImageUrl('');
+      return;
+    }
+    let cancelled = false;
     getImageAsset(el.imageId).then((asset) => {
-      if (asset) {
+      if (!cancelled && asset) {
         setImageUrl(getImageURL(asset));
       }
     });
+    return () => { cancelled = true; };
   }, [el.imageId]);
 
   // 替换图片
@@ -432,7 +445,8 @@ function ImagePropertyPanel({ el, pageIndex, onUpdate }: ImagePanelProps) {
           </button>
           <button
             onClick={() => setShowCropper(true)}
-            className="py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            disabled={!el.imageId}
+            className="py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-100"
           >
             ✂️ 裁剪
           </button>

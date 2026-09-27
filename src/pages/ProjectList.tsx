@@ -369,74 +369,74 @@ export default function ProjectList() {
 
       </div>
 
-      {/* 右侧文字区 - 杂志风格 */}
-      <div className="w-[380px] flex-shrink-0 p-8 bg-[#ede8df] flex flex-col">
+      {/* 右侧文字区 - 杂志风格（响应式） */}
+      <div className="w-[280px] sm:w-[320px] md:w-[360px] lg:w-[380px] flex-shrink-0 p-4 sm:p-6 md:p-7 lg:p-8 bg-[#ede8df] flex flex-col overflow-hidden">
         {/* 顶部小标签 */}
-        <div className="text-xs text-gray-400 mb-2 tracking-wider">MY PHOTO BOOK SHELF</div>
+        <div className="text-[10px] sm:text-xs text-gray-400 mb-1 sm:mb-2 tracking-wider">MY PHOTO BOOK SHELF</div>
 
         {/* 大标题 */}
-        <h2 className="text-4xl font-bold text-gray-900 mb-4 tracking-tight" style={{ fontFamily: 'FangSong, 仿宋, STSong, serif' }}>
+        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-2 sm:mb-4 tracking-tight" style={{ fontFamily: 'FangSong, 仿宋, STSong, serif' }}>
           是你的书
         </h2>
 
         {/* 正文介绍 */}
-        <p className="text-sm text-gray-700 leading-relaxed mb-6">
+        <p className="text-xs sm:text-sm text-gray-700 leading-relaxed mb-3 sm:mb-6">
           把照片做成一本书，记录你走过的路，遇见的树，和某一瞬间的小感悟。
         </p>
 
         {/* 引用语 */}
-        <div className="border-l-2 border-gray-300 pl-4 mb-8">
-          <p className="leading-relaxed text-gray-600 italic" style={{ fontSize: '0.75rem' }}>
+        <div className="border-l-2 border-gray-300 pl-3 sm:pl-4 mb-4 sm:mb-8 flex-shrink-0">
+          <p className="leading-relaxed text-gray-600 italic" style={{ fontSize: '0.7rem' }}>
             「当照片被重新排列，一段旅程也重新获得了时间。」
           </p>
-          <p className="text-xs text-gray-400 mt-2">— 关于相册的意义</p>
+          <p className="text-[10px] sm:text-xs text-gray-400 mt-1 sm:mt-2">— 关于相册的意义</p>
         </div>
 
         {/* 信息栏 */}
-        <div className="grid grid-cols-2 gap-4 py-5 border-t border-gray-300">
+        <div className="grid grid-cols-2 gap-2 sm:gap-4 py-3 sm:py-5 border-t border-gray-300 flex-shrink-0">
           <div>
-            <div className="text-xs text-gray-400 mb-1">形式</div>
-            <div className="text-sm text-gray-700">电子相册 · A5 竖版</div>
+            <div className="text-[10px] sm:text-xs text-gray-400 mb-0.5 sm:mb-1">形式</div>
+            <div className="text-xs sm:text-sm text-gray-700">电子相册 · A5 竖版</div>
           </div>
           <div>
-            <div className="text-xs text-gray-400 mb-1">收藏</div>
-            <div className="text-sm text-gray-700">个人珍藏版</div>
+            <div className="text-[10px] sm:text-xs text-gray-400 mb-0.5 sm:mb-1">收藏</div>
+            <div className="text-xs sm:text-sm text-gray-700">个人珍藏版</div>
           </div>
         </div>
 
-        {/* 装饰插画：书架女孩（自动填充中间剩余空间） */}
-        <div className="flex-1 flex items-center justify-center py-4">
+        {/* 装饰插画：书架女孩（自适应填充中间剩余空间） */}
+        <div className="flex-1 flex items-center justify-center py-2 sm:py-4 min-h-0">
           <img
             src="https://aka.doubaocdn.com/s/7Ac3nyqva8"
             alt="书架女孩"
-            className="w-full max-w-xs"
+            className="w-full max-w-[160px] sm:max-w-[180px] md:max-w-[200px] lg:max-w-xs object-contain"
             style={{ mixBlendMode: 'multiply' }}
           />
         </div>
 
         {/* 底部按钮区（自动推到最底部） */}
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2 sm:gap-3 flex-shrink-0">
           <button
             onClick={() => navigate('/create')}
-            className="w-full px-5 py-2.5 bg-gradient-to-r from-amber-600 to-amber-800 text-white rounded-lg hover:from-amber-700 hover:to-amber-900 transition-all font-medium shadow-sm"
+            className="w-full px-4 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-amber-600 to-amber-800 text-white rounded-lg hover:from-amber-700 hover:to-amber-900 transition-all font-medium shadow-sm text-sm"
           >
             ✨ 智能生成
           </button>
           <button
             onClick={() => setShowCreate(true)}
-            className="w-full px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+            className="w-full px-4 sm:px-5 py-2 sm:py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
           >
             + 空白相册
           </button>
 
           {/* 备份。单独一栏、样式更轻：它是偶尔才用一次的兜底动作，
               不该跟"新建相册"抢注意力，但也不能藏起来——上面那条横幅指着它。 */}
-          <div className="mt-1 pt-3 border-t border-gray-400/40 grid grid-cols-2 gap-2">
+          <div className="mt-1 pt-2 sm:pt-3 border-t border-gray-400/40 grid grid-cols-2 gap-2">
             <button
               onClick={handleExport}
               disabled={busy !== null}
               title="把整个书架打包成一个 zip 文件下载下来"
-              className="px-3 py-2 bg-white/70 border border-gray-300 text-gray-600 rounded-lg hover:bg-white transition-colors text-sm disabled:opacity-50"
+              className="px-2 sm:px-3 py-1.5 sm:py-2 bg-white/70 border border-gray-300 text-gray-600 rounded-lg hover:bg-white transition-colors text-xs sm:text-sm disabled:opacity-50"
             >
               📦 导出备份
             </button>
@@ -444,7 +444,7 @@ export default function ProjectList() {
               onClick={() => fileInputRef.current?.click()}
               disabled={busy !== null}
               title="从备份 zip 里恢复相册"
-              className="px-3 py-2 bg-white/70 border border-gray-300 text-gray-600 rounded-lg hover:bg-white transition-colors text-sm disabled:opacity-50"
+              className="px-2 sm:px-3 py-1.5 sm:py-2 bg-white/70 border border-gray-300 text-gray-600 rounded-lg hover:bg-white transition-colors text-xs sm:text-sm disabled:opacity-50"
             >
               📥 导入备份
             </button>

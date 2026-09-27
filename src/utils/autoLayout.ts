@@ -10,6 +10,8 @@ export interface AutoLayoutOptions {
   format: BookFormat;
   /** 每页最多几张图（1-4） */
   maxImagesPerPage: number;
+  /** 正文字号（pt），默认12，可选14 */
+  bodyFontSize?: number;
   /** 是否生成封面页 */
   includeCover: boolean;
   /** 是否生成结尾页 */
@@ -52,6 +54,9 @@ const TEMPLATES_BY_COUNT: Record<number, string[]> = {
   ],
   5: [
     'five-collage',        // 五图拼贴
+  ],
+  10: [
+    'nine-grid-avatar',    // 九宫格头像（1张头像 + 9张九宫格）
   ],
 };
 
@@ -103,7 +108,7 @@ function getUniqueParagraph(theme: Theme, used: UsedTexts): string {
  * 自动生成电子相册
  */
 export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
-  const { projectName, themeId, imageIds, format, maxImagesPerPage, includeCover, includeEnding } = options;
+  const { projectName, themeId, imageIds, format, maxImagesPerPage, bodyFontSize = 12, includeCover, includeEnding } = options;
   const theme = getThemeById(themeId) || THEMES[0];
   const used: UsedTexts = { pageTitles: new Set(), paragraphs: new Set() };
 
@@ -120,7 +125,8 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
   // ========== 2. 内容页：交替生成「多张图页」和「单张满版图页」 ==========
   let isMultiPhotoPage = true; // 第一页是多张图页
   let multiPhotoCountIndex = 0; // 多图页的数量循环索引：2→3→4→5→2→3...
-  const multiPhotoCounts = [2, 3, 4, 5]; // 保证双图、三图、四图、五图都有
+  // 至少15张图片才会生成九宫格头像模板（10图）
+  const multiPhotoCounts = imageIds.length >= 15 ? [2, 3, 4, 5, 10] : [2, 3, 4, 5];
   let lastTemplateId: string | undefined = undefined; // 上一页用的模板，避免重复
 
   while (imageIndex < imageIds.length) {
@@ -149,7 +155,7 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
 
     // 应用模板
     const template = TEMPLATES.find((t) => t.id === templateId)!;
-    const elements = applyTemplate(template, format, pageImageIds);
+    const elements = applyTemplate(template, format, pageImageIds, themeId, bodyFontSize);
 
     // 填充文案（单张满版图页不填文案）
     if (isMultiPhotoPage) {
@@ -197,6 +203,7 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
     updatedAt: now,
     version: 1,
     themeId,
+    bodyFontSize,
   };
 }
 

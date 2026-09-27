@@ -51,24 +51,33 @@ export default function Editor() {
     textAlign: string;
   } | null>(null);
   const editingTextRef = useRef<HTMLTextAreaElement>(null);
-  // 正在裁剪的图片元素 id
-  const [croppingImageId, setCroppingImageId] = useState<string | null>(null);
-  const [croppingImageUrl, setCroppingImageUrl] = useState<string>('');
+  // 正在裁剪的图片。id 和 URL 绑成一份状态存：分成两个 state 的话，切换到下一个
+  // 元素时会出现「新元素的 id + 上一个元素的 URL」的中间态，对话框会先闪一下上一张照片
+  const [cropping, setCropping] = useState<{ id: string; url: string } | null>(null);
 
   // 加载裁剪图片的 URL
   useEffect(() => {
-    if (!croppingImageId || !project) return;
-    const el = project.pages[currentPageIndex]?.elements.find(e => e.id === croppingImageId);
-    if (!el || el.type !== 'image') return;
-    const imageId = (el as any).imageId;
-    if (!imageId) return;
+    const id = cropping?.id;
+    const el = id && project
+      ? project.pages[currentPageIndex]?.elements.find((e) => e.id === id)
+      : undefined;
+    const imageId = el && el.type === 'image' ? (el as any).imageId : undefined;
+    if (!id || !imageId) {
+      // 没有照片可裁（模板留下的空图片区域就是这种）：关掉。
+      // 不关的话会拿上一张的 URL 顶替 —— blob URL 还活着，照片照样显示得出来，
+      // 看起来就像"空图片区域弹出了上一页的照片"。
+      if (id) setCropping(null);
+      return;
+    }
+    let cancelled = false;
     (async () => {
       const asset = await getImageAsset(imageId);
-      if (asset) {
-        setCroppingImageUrl(getImageURL(asset));
-      }
+      if (cancelled) return;
+      // 照片取不到也关掉：取不到就没法裁
+      setCropping(asset ? { id, url: getImageURL(asset) } : null);
     })();
-  }, [croppingImageId, project, currentPageIndex]);
+    return () => { cancelled = true; };
+  }, [cropping?.id, project, currentPageIndex]);
 
   // 加载项目
   useEffect(() => {
@@ -124,7 +133,9 @@ export default function Editor() {
     interaction.onImageCrop = (elementId) => {
       // 先选中这个图片元素，再打开裁剪
       dispatch(selectElement(elementId));
-      setCroppingImageId(elementId);
+      // URL 先留空，等上面那个 effect 取到照片再开对话框。
+      // 直接沿用上一次的 URL 的话，会先闪一下上一张照片
+      setCropping({ id: elementId, url: '' });
     };
     interaction.onAlignGuides = (guides) => {
       rendererRef.current?.setAlignGuides(guides);
@@ -169,6 +180,10 @@ export default function Editor() {
       for (const el of page.elements) {
         if (el.type === 'image' || el.type === 'sticker') {
           const id = el.type === 'image' ? el.imageId : el.stickerId;
+          // 模板留下的空图片区域没有 imageId，必须跳过：不跳的话
+          // getImageAsset(undefined) 会抛 DataError 把整个循环中断，
+          // 排在这个空位后面的照片就再也加载不到了（画布上一直是灰色占位）
+          if (!id) continue;
           if (!rendererRef.current!.getCachedImage(id)) {
             const asset = await getImageAsset(id);
             if (asset) {
@@ -305,7 +320,7 @@ export default function Editor() {
       opacity: 1,
       zIndex: page.elements.length,
       content: '双击编辑文字',
-      fontSize: 14,
+      fontSize: project.bodyFontSize || 12,
       fontFamily: 'sans-serif',
       color: '#333333',
       textAlign: 'left',
@@ -452,6 +467,19 @@ export default function Editor() {
                     if (project.pages.length <= 1) return;
                     dispatch(pushHistory());
                     dispatch(deletePage(idx));
+                    // 删除页面后，自动切换到正确的当前页，避免索引越界导致白屏
+                    const total = project.pages.length;
+                    let newIndex = currentPageIndex;
+                    if (idx === currentPageIndex) {
+                      // 删除的是当前页：如果是最后一页就跳到上一页，否则保持索引（自动指向下一页）
+                      newIndex = idx === total - 1 ? idx - 1 : idx;
+                    } else if (idx < currentPageIndex) {
+                      // 删除的是当前页之前的页，当前索引减1
+                      newIndex = currentPageIndex - 1;
+                    }
+                    // 确保索引在有效范围内
+                    newIndex = Math.max(0, Math.min(newIndex, total - 2));
+                    setTimeout(() => dispatch(setCurrentPageAction(newIndex)), 0);
                   }}
                   onAddPageBefore={() => {
                     dispatch(pushHistory());
@@ -569,24 +597,24 @@ export default function Editor() {
       {/* 隐藏的文件上传 */}
       <input ref={fileInputRef} type="file" accept="image/*,.heic,.heif" multiple onChange={handleImageUpload} className="hidden" />
 
-      {/* 图片裁剪对话框 */}
-      {croppingImageId && croppingImageUrl && (() => {
-        const el = currentPage?.elements.find(e => e.id === croppingImageId);
+      {/* 图片裁剪对话框（URL 有了才开，也就是"确实有照片"才开） */}
+      {cropping?.url && (() => {
+        const el = currentPage?.elements.find(e => e.id === cropping.id);
         if (!el || el.type !== 'image') return null;
         return (
           <ImageCropper
             element={el as any}
-            imageUrl={croppingImageUrl}
+            imageUrl={cropping.url}
             onConfirm={(crop) => {
               dispatch(pushHistory());
               dispatch(updateElement({
                 pageIndex: currentPageIndex,
-                elementId: croppingImageId,
+                elementId: cropping.id,
                 updates: { crop }
               }));
-              setCroppingImageId(null);
+              setCropping(null);
             }}
-            onClose={() => setCroppingImageId(null)}
+            onClose={() => setCropping(null)}
           />
         );
       })()}

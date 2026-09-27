@@ -21,7 +21,7 @@ export default function CreateWizard() {
   const [images, setImages] = useState<{ file: File; preview: string }[]>([]);
   const [projectName, setProjectName] = useState('');
   const [selectedTheme, setSelectedTheme] = useState(THEMES[0].id);
-  const [maxImagesPerPage, setMaxImagesPerPage] = useState(5);
+  const [bodyFontSize, setBodyFontSize] = useState(12);
   const [includeCover, setIncludeCover] = useState(true);
   const [includeEnding, setIncludeEnding] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -87,7 +87,8 @@ export default function CreateWizard() {
         themeId: selectedTheme,
         imageIds: imageAssets.map((a) => a.id),
         format: PRESET_FORMATS.A5,
-        maxImagesPerPage,
+        maxImagesPerPage: 5,
+        bodyFontSize,
         includeCover,
         includeEnding,
       });
@@ -285,26 +286,26 @@ export default function CreateWizard() {
               </div>
             </div>
 
-            {/* 每页图片数 */}
+            {/* 正文字号选择 */}
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">每页最多几张照片</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">正文字号</label>
               <div className="flex gap-2">
-                {[1, 2, 3, 4, 5].map((num) => (
+                {[12, 14].map((size) => (
                   <button
-                    key={num}
-                    onClick={() => setMaxImagesPerPage(num)}
+                    key={size}
+                    onClick={() => setBodyFontSize(size)}
                     className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
-                      maxImagesPerPage === num
+                      bodyFontSize === size
                         ? 'border-amber-500 bg-amber-50 text-amber-700'
                         : 'border-gray-200 text-gray-600 hover:border-gray-300'
                     }`}
                   >
-                    {num} 张
+                    {size}pt {size === 14 ? '（大字体）' : '（常规）'}
                   </button>
                 ))}
               </div>
               <p className="text-xs text-gray-400 mt-2">
-                系统会根据每页照片数量自动选择最合适的排版模板
+                12pt为常规书籍正文字号，14pt字体更大，阅读更轻松
               </p>
             </div>
 

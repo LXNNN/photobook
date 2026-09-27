@@ -145,13 +145,16 @@ export const projectSlice = createSlice({
       if (sourceIdx === -1 || targetIdx === -1) return;
       const source = page.elements[sourceIdx] as ImageElement;
       const target = page.elements[targetIdx] as ImageElement;
-      // 互换 imageId 和 crop
+      // 只换照片，不换裁剪。
+      //
+      // 裁剪是「当前图片区域」的属性，不是照片的属性：crop 归一化到源图片上，
+      // 形状天生等于它所在那个框的形状。跟着照片搬的话，一块按竖框裁的框落到
+      // 横框里就没法保持原样了 —— 要贴合横框只能往里缩，同一个框看起来会
+      // 莫名其妙变小（照片等于被放大）。而"换了照片"并不等于"换了区域大小"：
+      // 框原样不动，新照片照旧从这个窗口往外看，不合适重新裁一次就好。
       const tempImageId = source.imageId;
-      const tempCrop = { ...source.crop };
       source.imageId = target.imageId;
-      source.crop = { ...target.crop };
       target.imageId = tempImageId;
-      target.crop = tempCrop;
       state.current.updatedAt = Date.now();
     },
     deleteElement(state, action: PayloadAction<{ pageIndex: number; elementId: string }>) {

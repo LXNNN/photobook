@@ -219,7 +219,7 @@ export const TEMPLATES: TemplateDefinition[] = [
     thumbnail: 'two-slanted',
     elements: [
       // 左上角小字文案（宽度缩小30%，与上图间距8mm）
-      { type: 'text', x: 0.12, y: 0.148, width: 0.532, height: 0.03, placeholder: '出发的意义从来都不是赶路', fontSizeRatio: 0.02, textAlign: 'left', color: '#999999' },
+      { type: 'text', x: 0.12, y: 0.148, width: 0.532, height: 0.03, placeholder: '出发的意义从来都不是赶路', fontSizeRatio: 0.02, textAlign: 'left', color: '#666666' },
       // 上方横图（下移，与下图间距5mm）
       { type: 'image', x: 0.12, y: 0.216, width: 0.76, height: 0.32, cropHint: 'cover' },
       // 下方横图（位置不变）
@@ -324,9 +324,9 @@ export const TEMPLATES: TemplateDefinition[] = [
       // 右边大图（左右缝隙缩小）
       { type: 'image', x: 0.42, y: 0.06, width: 0.50, height: 0.64, cropHint: 'cover' },
       // 底部标题
-      { type: 'text', x: 0.08, y: 0.74, width: 0.84, height: 0.05, placeholder: '标题', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      { type: 'text', x: 0.08, y: 0.74, width: 0.7162, height: 0.05, placeholder: '标题', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
       // 底部正文（区域大一点）
-      { type: 'text', x: 0.08, y: 0.80, width: 0.84, height: 0.16, placeholder: '写点什么...', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+      { type: 'text', x: 0.08, y: 0.80, width: 0.7162, height: 0.16, placeholder: '写点什么...', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
     ],
   },
   // ============ 文字为主 ============
@@ -359,7 +359,7 @@ export const TEMPLATES: TemplateDefinition[] = [
       // 右图
       { type: 'image', x: 0.5, y: 0.24, width: 0.42, height: 0.58, cropHint: 'cover' },
       // 正文
-      { type: 'text', x: 0.08, y: 0.86, width: 0.5, height: 0.1, placeholder: '在这里写下你的故事和感受...', fontSizeRatio: 0.022, textAlign: 'left', color: '#666666' },
+      { type: 'text', x: 0.08, y: 0.86, width: 0.5676, height: 0.1, placeholder: '在这里写下你的故事和感受...', fontSizeRatio: 0.022, textAlign: 'left', color: '#666666' },
     ],
   },
   {
@@ -383,6 +383,33 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'text', x: 0.05, y: 0.887, width: 0.9, height: 0.04, placeholder: '在这里写标题', fontSizeRatio: 0.04, textAlign: 'center', fontWeight: 'bold', color: '#2c2c2c' },
     ],
   },
+  {
+    id: 'nine-grid-avatar',
+    name: '九宫格头像',
+    category: '多图拼贴',
+    description: '顶部头像+标题文案，下方3×3九宫格紧凑排列，适合朋友圈合集',
+    thumbnail: 'nine-grid-avatar',
+    elements: [
+      // 顶部左侧头像（28×30mm，y=15mm）
+      { type: 'image', x: 0.05, y: 0.0714, width: 0.1892, height: 0.1429, cropHint: 'cover' },
+      // 顶部右侧标题（y=17mm，与头像间距加大，宽87mm）
+      { type: 'text', x: 0.30, y: 0.081, width: 0.5878, height: 0.06, placeholder: '在这里写标题', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      // 顶部右侧文案（宽87mm）
+      { type: 'text', x: 0.30, y: 0.15, width: 0.5878, height: 0.08, placeholder: '在这里写下你的故事和感受...', fontSizeRatio: 0.024, textAlign: 'left', color: '#666666' },
+      // 九宫格 - 第1行（43×45mm，间距不变，整体靠下，和头像间距加大）
+      { type: 'image', x: 0.052, y: 0.30, width: 0.2905, height: 0.2143, cropHint: 'cover' },
+      { type: 'image', x: 0.3545, y: 0.30, width: 0.2905, height: 0.2143, cropHint: 'cover' },
+      { type: 'image', x: 0.657, y: 0.30, width: 0.2905, height: 0.2143, cropHint: 'cover' },
+      // 九宫格 - 第2行
+      { type: 'image', x: 0.052, y: 0.5263, width: 0.2905, height: 0.2143, cropHint: 'cover' },
+      { type: 'image', x: 0.3545, y: 0.5263, width: 0.2905, height: 0.2143, cropHint: 'cover' },
+      { type: 'image', x: 0.657, y: 0.5263, width: 0.2905, height: 0.2143, cropHint: 'cover' },
+      // 九宫格 - 第3行
+      { type: 'image', x: 0.052, y: 0.7526, width: 0.2905, height: 0.2143, cropHint: 'cover' },
+      { type: 'image', x: 0.3545, y: 0.7526, width: 0.2905, height: 0.2143, cropHint: 'cover' },
+      { type: 'image', x: 0.657, y: 0.7526, width: 0.2905, height: 0.2143, cropHint: 'cover' },
+    ],
+  },
 ];
 
 /**
@@ -391,12 +418,14 @@ export const TEMPLATES: TemplateDefinition[] = [
  * @param format 页面格式
  * @param existingImageIds 可用的图片ID列表（按顺序填充模板中的图片位）
  * @param themeId 主题ID（旅行/日常用模板文案，其他主题用主题文案）
+ * @param bodyFontSize 正文字号（pt），默认12，可选14
  */
 export function applyTemplate(
   template: TemplateDefinition,
   format: BookFormat,
   existingImageIds: string[] = [],
-  themeId: string = 'travel'
+  themeId: string = 'travel',
+  bodyFontSize: number = 12
 ): Element[] {
   let imageIndex = 0;
   const elements: Element[] = [];
@@ -472,7 +501,7 @@ export function applyTemplate(
           } else {
             content = randomPick(theme.paragraphs);
           }
-          actualFontSizeRatio = 0.029;
+          actualFontSizeRatio = bodyFontSize / (format.width * 2.83);
         }
       } else if (templateCopyList && templateCopyList.length > 0) {
         // 模板文案模式（旅行/日常主题）
@@ -498,8 +527,8 @@ export function applyTemplate(
           } else {
             content = randomCopy.body || tplEl.placeholder || '';
           }
-          // 只有我们指定的模板，正文才统一改成12号
-          actualFontSizeRatio = 0.029;
+          // 正文字号根据用户选择的 bodyFontSize 动态计算（默认12pt，可选14pt）
+          actualFontSizeRatio = bodyFontSize / (format.width * 2.83);
         }
       } else {
         // 没有对应文案库的模板，用原来的随机文案，字号也保持原样

@@ -172,6 +172,44 @@ export interface CropArea {
 }
 
 /**
+ * 把裁剪框整形成目标宽高比。
+ *
+ * 裁剪框只有在宽高比和目标一致时才是合法的：drawImage 会把裁剪区**原样拉伸**填满
+ * 目标框，比例一旦对不上，照片就是被拉扁或者抻长的。用户按某个元素形状裁出来的框
+ * 天生是配的，所以这个函数对正常数据是恒等变换，可以放心地在渲染和裁剪对话框里都
+ * 走一遍 —— 顺带把历史数据里已经对不上的框掰回来（元素被缩放过、换过位、老版本存
+ * 下来的都可能对不上）。
+ *
+ * 整形时保持裁剪框中心不动，按需往里缩。往里缩不会超出原来的裁剪区，所以也不可能
+ * 越过图片边界。
+ */
+export function fitCropToRatio(
+  crop: CropArea,
+  imgWidth: number,
+  imgHeight: number,
+  targetRatio: number
+): CropArea {
+  const w = crop.width * imgWidth;
+  const h = crop.height * imgHeight;
+  if (!(w > 0) || !(h > 0) || !(targetRatio > 0)) return crop;
+  // 已经配得上了就原样奉还，免得反复取整把正常裁剪越磨越小
+  if (Math.abs(w / h - targetRatio) < 1e-4) return crop;
+
+  let nw = w;
+  let nh = h;
+  if (w / h > targetRatio) nw = h * targetRatio; // 太宽 → 左右各收一点
+  else nh = w / targetRatio; // 太高 → 上下各收一点
+
+  const cx = crop.x * imgWidth + w / 2;
+  const cy = crop.y * imgHeight + h / 2;
+  // 浮点误差可能让框压出边界一点点，平移回来（只平移不缩放，比例不受影响）
+  const nx = Math.max(0, Math.min(imgWidth - nw, cx - nw / 2));
+  const ny = Math.max(0, Math.min(imgHeight - nh, cy - nh / 2));
+
+  return { x: nx / imgWidth, y: ny / imgHeight, width: nw / imgWidth, height: nh / imgHeight };
+}
+
+/**
  * 计算 cover 模式的裁剪区域
  * 保持图片原始比例，居中裁剪，填满目标区域，图片不会变形
  * @param imgWidth 图片原始宽度
@@ -195,11 +233,13 @@ export function computeCoverCrop(
   );
 
   if (hasCustomCrop && customCrop) {
+    // 整形到目标框的比例再取源区，否则 drawImage 会把照片拉变形
+    const fit = fitCropToRatio(customCrop, imgWidth, imgHeight, targetWidth / targetHeight);
     return {
-      sx: customCrop.x * imgWidth,
-      sy: customCrop.y * imgHeight,
-      sw: customCrop.width * imgWidth,
-      sh: customCrop.height * imgHeight,
+      sx: fit.x * imgWidth,
+      sy: fit.y * imgHeight,
+      sw: fit.width * imgWidth,
+      sh: fit.height * imgHeight,
     };
   }
 
