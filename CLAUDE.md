@@ -4,11 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-电子相册网站（photo-book）：纯前端照片书编辑器。用户上传照片 → 自动排版（智能生成）或手动排版 → 翻书预览 → 导出 300dpi PDF 交给打印社。所有数据存在浏览器 IndexedDB，不上传服务器。
+电子相册网站（photo-book）：纯前端照片书编辑器。用户上传照片 → 自动排版（智能生成）或手动排版 → 翻书预览 → 导出 300dpi PDF 交给打印社。数据默认存在浏览器 IndexedDB，不上传服务器；推荐用户启用**文件夹模式**把相册写进电脑文件夹（见下文「文件夹模式」）。
 
 - 技术栈：React 18 + TypeScript（strict）+ Vite 5 + Redux Toolkit + Tailwind CSS + page-flip（翻书动画）+ idb + jspdf + fflate + heic-to
 - 部署：GitHub Pages，地址 `https://LXNNN.github.io/photobook/`
 - 完整需求背景见 `项目设计文档.md` 和 `电子相册网站开发提示词.md`（后者是给 AI 的完整开发提示词，包含全部关键设计规则）
+- 这两个设计文档和 `docs/` **不上传 GitHub**（已写进 .gitignore 且已 `git rm --cached`），只保留在本地
+- 面向用户的使用指南是 `电子相册网站-使用指南.md`（同步到飞书文档发给用户）；网站功能有变化时，提醒同步更新这份指南
 - 这是一个个人项目，没有测试、没有 lint、没有 CI。验证靠真实浏览器手动测试（无头浏览器画不出书页，别用它验证渲染）
 
 ## 常用命令
@@ -21,7 +23,7 @@ npm run preview   # 预览构建产物
 
 - **不要改 dev 端口**：IndexedDB 按源（协议+域名+端口）隔离，换端口 = 换源 = 空书架，用户会以为数据丢了
 - **装了新依赖要重启 dev server**：否则 Vite 预打包缓存里没有它，import 直接失败
-- 构建部署：`npm run build` 后手动把 dist 推到 gh-pages 分支
+- 构建部署：`npm run build` 后把 dist 推到 gh-pages 分支（dist 里有独立 git 仓库，细节见「部署注意」）
 
 ## 架构总览
 
@@ -69,6 +71,7 @@ npm run preview   # 预览构建产物
 - 屏幕→画布坐标换算用 `getBoundingClientRect()` 比例，已包含外层 CSS transform（zoom/pan），**不要再手动减 pan 除 zoom**
 - 空图片区域（模板里没填照片的 imageId 为空的元素）：加载资源时**必须跳过**，`getImageAsset(undefined)` 会抛 DataError 中断整个循环，排它后面的照片永远画不出来
 - 编辑器画布固定 96dpi，放大看必糊——这是已知的、用户接受的设计，别顺手"修"（和上传压缩是两回事）
+- **进编辑页一律重置**：Editor 挂载/切 projectId 时 `dispatch(resetEditor())`——页码回第 1 页、zoom/pan/选中全复位（辅助线开关也回默认）。用户明确要求「不要有缓存」，别加「恢复上次编辑位置」这类功能
 
 ### 预览页（src/pages/Viewer.tsx + page-flip）
 
@@ -91,10 +94,26 @@ npm run preview   # 预览构建产物
 - 导入分两遍：先读清单停下问重名（**覆盖要用本地相册的 id**，不是备份里的 id），再解照片写库。模板冲突规则：id 相同 = 同一模板直接更新；仅名字撞 = 两个都留、后导入的改名
 - 文件名的非法字符正则必须写 `\p{Cc}` 形式——**源码里永远别写裸控制字符**（会落成真实 NUL，整个文件变二进制）
 
+### 文件夹模式（src/utils/folderMode.ts + folderLibrary.ts + components/FolderBanner.tsx）
+
+用户可选用 File System Access API 把相册存到电脑文件夹：磁盘文件夹才是主数据，IndexedDB 从「仓库」降级成「工作台」。只有 Chromium 系浏览器支持；Firefox/Safari 走 `unsupported` 状态（横幅退回琥珀色备份提醒，文案别动）。
+
+- 磁盘结构：`<用户选的文件夹>\photo-book\{相册名}\相册数据.json + 照片\0001.jpg`；根目录还有 `我的模板.json` 和 `先看我-说明.txt`
+- 权限：浏览器重启后要在点击手势里「重新连接」（授权框选「每次访问时允许」即可长期免点）；文件夹被移动/改名 = `folder-missing`，引导「重新指认文件夹」，数据不丢
+- **合并只走 `runSync` 一条路**（首次启用迁移、重新连接、重新指认、换电脑载入全用同一套规则）：同 id 以文件夹为准；仅文件夹有 → 载入；仅名字撞 → 后并入的改名。改这块前先读 `docs/` 下的文件夹模式设计文档（仅本地）
+- 迁移后**验证磁盘写入成功才**从 IndexedDB 清照片 blob（verifiedIds）；没被任何相册引用的孤儿 blob 是故意保留的
+- 在网站上删除相册 = 连磁盘数据一起删（先弹窗确认；不进回收站）
+
+### Tailwind：非档位透明度类会被静默丢弃
+
+`bg-gray-900/92` 这类不在透明度档位（0/5/10/…/90/95/100）的值**不生成 CSS、也不报错**，类被静默丢掉 → 背景透明、白字白底（toast 翻过车）。只用档位值或方括号写法（`bg-gray-900/[0.92]`）。排查「写了类但样式没生效」：grep `dist/assets/*.css` 看类有没有生成（CSS 里斜杠写作 `\/` 转义）
+
 ## 部署注意
 
 - `vite.config.ts` 的 `base: '/photobook/'` 和 `main.tsx` 的 `<BrowserRouter basename="/photobook">` 必须一致，改仓库名要两处一起改
+- **`dist/` 里是一个独立的 git 仓库**（`dist/.git`，remote = `github.com/LXNNN/photobook.git`，分支 `gh-pages`）。部署流程：`npm run build` → 进 dist → `git add -A && git commit -m "deploy: …"` → `git push origin gh-pages`。增量提交，**不要 force push**；重新构建不影响 `dist/.git`
 
 ## 数据安全红线
 
-- 所有数据在用户浏览器本地。会让数据"看起来没了"的操作（换端口、清浏览器数据、动 IndexedDB schema 不迁移）都要先想清楚、先向用户解释
+- 所有数据在用户本地：默认在浏览器 IndexedDB；启用文件夹模式后**磁盘文件夹才是主数据**，IndexedDB 只是工作台。会让数据"看起来没了"的操作（换端口、清浏览器数据、动 IndexedDB schema 不迁移）都要先想清楚、先向用户解释
+- 不要手动动用户的 IndexedDB 记录（DevTools 里删行、脚本清库都不行）——看着像「清理」，对用户就是数据没了
