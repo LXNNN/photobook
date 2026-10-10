@@ -1,6 +1,7 @@
 import { openDB, IDBPDatabase } from 'idb';
 import type { Project, ImageAsset, StoredImageRecord } from '@/types';
 import type { TemplateDefinition } from '@/templates';
+import { collectAssetIds } from '@/engine/drawPageContent';
 
 const DB_NAME = 'photo-book-db';
 /**
@@ -54,9 +55,34 @@ export async function getAllProjects(): Promise<Project[]> {
   return projects.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+/**
+ * 删除相册：书架记录 + 它引用过、且**不再被任何相册引用**的照片记录（images 表）。
+ *
+ * 顺序是刻意的——先删相册记录、再清照片：
+ * 中途失败最多留下孤儿照片（无害，以后也没人引用得到）；反过来会出现
+ * 「相册还在、照片没了」的坏状态，那是真正会伤到用户的。
+ *
+ * 引用检查不能省：备份重复导入会造成两本相册共用同一批照片 id，
+ * 只删「这本引用过 且 其余相册都不再引用」的那些。
+ * （贴纸的 stickerId 也会进候选，但它们本来就不在 images 表里，删了是静默无操作。）
+ */
 export async function deleteProject(id: string): Promise<void> {
   const db = await getDB();
+  const project = (await db.get('projects', id)) as Project | undefined;
   await db.delete('projects', id);
+  if (!project) return;
+
+  const candidates = collectAssetIds(project.pages);
+  if (candidates.size === 0) return;
+
+  const rest = (await db.getAll('projects')) as Project[];
+  const stillUsed = new Set<string>();
+  for (const p of rest) {
+    for (const assetId of collectAssetIds(p.pages)) stillUsed.add(assetId);
+  }
+  for (const assetId of candidates) {
+    if (!stillUsed.has(assetId)) await deleteImageAsset(assetId);
+  }
 }
 
 // ==================== 图片资源存储 ====================

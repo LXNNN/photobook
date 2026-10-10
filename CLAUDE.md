@@ -33,6 +33,7 @@ npm run preview   # 预览构建产物
 - `Project { pages: Page[] }`，`Page { background, elements: Element[], templateId? }`，`Element = ImageElement | TextElement | StickerElement`（含 rotation/opacity/zIndex/locked）
 - `ImageElement.imageId` 指向 IndexedDB 里单独存储的 `ImageAsset`（blob 原图 + 200px 缩略图 dataURL）。`crop` 是相对原图 0-1 的裁剪区
 - **裁剪属于「区域」不属于照片**：换位互换只换 `imageId`，永远不搬 `crop`（`projectSlice.swapImages`）。裁剪框的宽高比必须和所在框一致，否则 drawImage 会把照片拉变形——`fitCropToRatio` 是安全网，渲染时都会走一遍
+- **删除相册会连照片记录一起清**：`storage.deleteProject` 先删相册记录，再把「它引用过、且其余相册都不再引用」的 id 从 `images` 表删掉（要查引用是因为备份重复导入会让两本相册共用照片 id；收集 id 用 `collectAssetIds`，别自己遍历 pages）。顺序不能反——中途失败最多留孤儿（无害），反过来会「相册还在、照片没了」
 
 ### 页面绘制只有一份实现（最重要）
 
@@ -101,7 +102,7 @@ npm run preview   # 预览构建产物
 - 磁盘结构：`<用户选的文件夹>\photo-book\{相册名}\相册数据.json + 照片\0001.jpg`；根目录还有 `我的模板.json` 和 `先看我-说明.txt`
 - 权限：浏览器重启后要在点击手势里「重新连接」（授权框选「每次访问时允许」即可长期免点）；文件夹被移动/改名 = `folder-missing`，引导「重新指认文件夹」，数据不丢
 - **合并只走 `runSync` 一条路**（首次启用迁移、重新连接、重新指认、换电脑载入全用同一套规则）：同 id 以文件夹为准；仅文件夹有 → 载入；仅名字撞 → 后并入的改名。改这块前先读 `docs/` 下的文件夹模式设计文档（仅本地）
-- 迁移后**验证磁盘写入成功才**从 IndexedDB 清照片 blob（verifiedIds）；没被任何相册引用的孤儿 blob 是故意保留的
+- 迁移后**验证磁盘写入成功才**从 IndexedDB 清照片 blob（verifiedIds）；孤儿 blob（没人引用的）不自动清理，历史攒下的也先留着（删除相册时才会顺带清，见「数据模型与单位」）
 - 在网站上删除相册 = 连磁盘数据一起删（先弹窗确认；不进回收站）
 
 ### Tailwind：非档位透明度类会被静默丢弃

@@ -205,7 +205,7 @@ export default function ProjectList() {
       return;
     }
     if (getFolderStatus().state !== 'connected') {
-      // 未启用文件夹模式：维持现状（只删浏览器里的记录）
+      // 未启用文件夹模式：删浏览器里的记录（deleteProject 会顺带清掉它不再被任何相册引用的照片记录）
       if (!confirm('确定删除这个相册吗？此操作不可恢复。')) return;
       await deleteProject(project.id);
       await loadProjects();
