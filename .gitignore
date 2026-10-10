@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 个人资料，不上传到 GitHub（只保留在本地）
+项目设计文档.md
+电子相册网站开发提示词.md
+docs/
