@@ -1,20 +1,25 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch, store } from '@/store';
 import { setCurrentProject, addElement, updateElement, deleteElement, addPage, deletePage, updateProjectName, reorderPages, swapImages, pushHistory, undo } from '@/store/projectSlice';
-import { selectElement, clearSelection, setZoom, setPan, resetZoom, setCurrentPage as setCurrentPageAction } from '@/store/editorSlice';
+import { selectElement, clearSelection, setZoom, setPan, resetZoom, resetEditor, setCurrentPage as setCurrentPageAction } from '@/store/editorSlice';
 import { setMode } from '@/store/uiSlice';
-import { getProject, saveProject } from '@/utils/storage';
+import { getProject } from '@/utils/storage';
+import { saveImageAsset, getImageAsset } from '@/utils/assetStore';
+import { subscribeFolderStatus, getFolderStatus } from '@/utils/folderMode';
+import { ensureFolderReady, reconnectFolder, flushFolderWrites, persistProject } from '@/utils/folderLibrary';
 import { CanvasRenderer } from '@/engine/CanvasRenderer';
 import { InteractionManager } from '@/engine/InteractionManager';
 import { mmToPx, generateId } from '@/utils/units';
 import { fileToImageAsset, getImageURL, blobToDataURL } from '@/utils/image';
-import { saveImageAsset, getImageAsset } from '@/utils/storage';
 import type { ImageElement, TextElement, Element } from '@/types';
 import PageThumbnail from '@/components/editor/PageThumbnail';
 import PropertyPanel from '@/components/editor/PropertyPanel';
 import TemplatePanel from '@/components/editor/TemplatePanel';
 import ImageCropper from '@/components/editor/ImageCropper';
+
+// 启动守卫在 StrictMode 下会跑两遍，提示只弹一次
+let folderGuardAlerted = false;
 
 export default function Editor() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -54,6 +59,29 @@ export default function Editor() {
   // 正在裁剪的图片。id 和 URL 绑成一份状态存：分成两个 state 的话，切换到下一个
   // 元素时会出现「新元素的 id + 上一个元素的 URL」的中间态，对话框会先闪一下上一张照片
   const [cropping, setCropping] = useState<{ id: string; url: string } | null>(null);
+  const folderStatus = useSyncExternalStore(subscribeFolderStatus, getFolderStatus);
+  /** 有改动还没落盘（防抖没到点）：页面隐藏时补一次保存 */
+  const dirtyRef = useRef(false);
+
+  // 启动时已启用文件夹模式但还没连上：不进入编辑（§5.3）——
+  // 照片都在磁盘里，没连上进来也画不出来，先回书架页把连接搞定。
+  // 只在进入时检查一次：编辑中途断连是允许继续的（§6.6）
+  useEffect(() => {
+    if (ensureFolderReady()) return;
+    if (!folderGuardAlerted) {
+      folderGuardAlerted = true;
+      alert('文件夹还没连上。照片暂时读不出来，先回书架页点「重新连接」，连上再进来吧');
+    }
+    navigate('/', { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 每次进编辑页都从「第 1 页 + 原始缩放」开始，不沿用上次离开时的状态：
+  // 不清的话，上次停在哪一页，再进来就还在哪一页，看起来像页面被"缓存"了。
+  // 依赖 projectId：换一本相册（或从书架重新点进来）也重置
+  useEffect(() => {
+    dispatch(resetEditor());
+  }, [dispatch, projectId]);
 
   // 加载裁剪图片的 URL
   useEffect(() => {
@@ -92,7 +120,7 @@ export default function Editor() {
       if (p) {
         dispatch(setCurrentProject(p));
         projectInitializedRef.current = true;
-        dispatch(setCurrentPageAction(0));
+        // 页码不用在这里重置：进入编辑页时已经统一 resetEditor 了（见上面那个 effect）
       } else {
         navigate('/');
       }
@@ -224,19 +252,38 @@ export default function Editor() {
   const handleSave = useCallback(async () => {
     if (!project) return;
     setSaving(true);
-    await saveProject(project);
+    await persistProject(project);
     setSaving(false);
     setTimeout(() => setSaving(false), 1500);
   }, [project]);
 
-  // 自动保存（防抖）
+  // 自动保存（防抖）：3 秒没再动就写一次。
+  // 已启用文件夹模式时顺着一起写这本相册的 相册数据.json（§6.6，同一个节奏）；
+  // 未启用时就是 IndexedDB（现状）——persistProject 内部已分好路
   useEffect(() => {
     if (!project) return;
+    dirtyRef.current = true;
     const timer = setTimeout(() => {
-      saveProject(project);
+      dirtyRef.current = false;
+      void persistProject(project);
     }, 3000);
     return () => clearTimeout(timer);
   }, [project]);
+
+  // 页面隐藏时补一次：防抖还没到点的改动 + 还没落盘的模板 json（§6.6 / §7.5）
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') return;
+      const current = store.getState().project.current;
+      if (current && dirtyRef.current) {
+        dirtyRef.current = false;
+        void persistProject(current);
+      }
+      void flushFolderWrites();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
 
   // 上传图片
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -246,7 +293,7 @@ export default function Editor() {
     for (const file of Array.from(files)) {
       try {
         const asset = await fileToImageAsset(file);
-        await saveImageAsset(asset);
+        await saveImageAsset(project.id, asset);
 
         // 如果当前选中了一个图片元素，直接替换它的图片
         const page = project.pages[currentPageIndex];
@@ -380,8 +427,8 @@ export default function Editor() {
   // 切换到浏览模式
   const handleViewMode = async () => {
     if (!project) return;
-    // 先保存项目，再跳转预览
-    await saveProject(project);
+    // 先保存项目（IndexedDB + 文件夹），再跳转预览
+    await persistProject(project);
     navigate(`/viewer/${project.id}`);
   };
 
@@ -390,6 +437,29 @@ export default function Editor() {
   }
 
   const currentPage = project.pages[currentPageIndex];
+
+  // 文件夹异常提示条（§9.4）：中途断连时编辑继续，改动始终先落浏览器，重连后自动补写
+  const folderNotice =
+    folderStatus.state === 'needs-reconnect'
+      ? '文件夹连接断开了。改动已先存在浏览器里，重新连接后会自动写入文件夹'
+      : folderStatus.state === 'folder-missing'
+        ? '找不到相册文件夹了。改动已先存在浏览器里，请到书架页重新指认文件夹'
+        : folderStatus.pendingWrites
+          ? '有改动还没写进文件夹，稍后会自动重试'
+          : '';
+
+  const handleReconnectInEditor = async () => {
+    const r = await reconnectFolder();
+    if (r.ok) return; // 状态一变，提示条自己消失
+    if (r.reason === 'denied') {
+      alert('没有连接成功。照片都还在，可以再试一次，或在浏览器设置里允许本站的文件夹访问');
+    } else if (r.reason === 'folder-missing') {
+      alert('文件夹被移动或改名了。请回到书架页，点「重新指认文件夹」重新选一下，数据不会丢');
+      navigate('/');
+    } else {
+      alert('重新连接失败，请再试一次');
+    }
+  };
 
   return (
     <div className="w-full h-full flex flex-col bg-[#e8e4de]">
@@ -405,7 +475,7 @@ export default function Editor() {
             onBlur={() => {
               const state = store.getState();
               if (state.project.current) {
-                saveProject(state.project.current);
+                void persistProject(state.project.current);
               }
             }}
             className="text-base font-medium bg-transparent border-b border-transparent hover:border-gray-300 focus:border-amber-600 outline-none px-1 py-0.5 w-48"
@@ -434,6 +504,30 @@ export default function Editor() {
           </button>
         </div>
       </header>
+
+      {/* 文件夹异常提示条（§9.4） */}
+      {folderNotice && (
+        <div className="flex-shrink-0 px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center gap-3 text-xs text-amber-800 z-10">
+          <span>⚠️</span>
+          <span className="flex-1">{folderNotice}</span>
+          {folderStatus.state === 'needs-reconnect' && (
+            <button
+              onClick={handleReconnectInEditor}
+              className="px-2.5 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors"
+            >
+              重新连接
+            </button>
+          )}
+          {folderStatus.state === 'folder-missing' && (
+            <button
+              onClick={() => navigate('/')}
+              className="px-2.5 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors"
+            >
+              去书架处理
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧面板 */}
@@ -590,6 +684,7 @@ export default function Editor() {
             page={currentPage}
             pageIndex={currentPageIndex}
             selectedIds={selectedIds}
+            projectId={project.id}
           />
         </aside>
       </div>

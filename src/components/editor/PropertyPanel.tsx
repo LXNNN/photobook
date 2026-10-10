@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { updateElement, setPageBackground, setPageTemplateId } from '@/store/projectSlice';
-import { getImageAsset, saveImageAsset } from '@/utils/storage';
+import { getImageAsset, saveImageAsset } from '@/utils/assetStore';
 import { persistTemplate } from '@/utils/templateLibrary';
 import { fileToImageAsset, getImageURL } from '@/utils/image';
 import { FONT_OPTIONS, FONT_WEIGHTS } from '@/utils/fonts';
@@ -20,9 +20,11 @@ interface Props {
   page: Page;
   pageIndex: number;
   selectedIds: string[];
+  /** 替换照片时要写进哪本相册的文件夹（资产仓库用） */
+  projectId: string;
 }
 
-export default function PropertyPanel({ page, pageIndex, selectedIds }: Props) {
+export default function PropertyPanel({ page, pageIndex, selectedIds, projectId }: Props) {
   const dispatch = useAppDispatch();
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
 
@@ -80,6 +82,7 @@ export default function PropertyPanel({ page, pageIndex, selectedIds }: Props) {
           el={selectedElement as ImageElement}
           pageIndex={pageIndex}
           onUpdate={updateEl}
+          projectId={projectId}
         />
       )}
 
@@ -372,9 +375,11 @@ interface ImagePanelProps {
   el: ImageElement;
   pageIndex: number;
   onUpdate: (updates: Partial<Element>) => void;
+  /** 替换照片时要写进哪本相册的文件夹（资产仓库用） */
+  projectId: string;
 }
 
-function ImagePropertyPanel({ el, pageIndex, onUpdate }: ImagePanelProps) {
+function ImagePropertyPanel({ el, pageIndex, onUpdate, projectId }: ImagePanelProps) {
   const dispatch = useAppDispatch();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showCropper, setShowCropper] = useState(false);
@@ -405,7 +410,7 @@ function ImagePropertyPanel({ el, pageIndex, onUpdate }: ImagePanelProps) {
 
     try {
       const asset = await fileToImageAsset(file);
-      await saveImageAsset(asset);
+      await saveImageAsset(projectId, asset);
 
       onUpdate({ imageId: asset.id, crop: { x: 0, y: 0, width: 1, height: 1 } });
 

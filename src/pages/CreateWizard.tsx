@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch } from '@/store';
 import { setCurrentProject } from '@/store/projectSlice';
@@ -6,9 +6,13 @@ import { setCurrentPage as setCurrentPageAction } from '@/store/editorSlice';
 import { THEMES } from '@/templates/themes';
 import { autoGenerateAlbum } from '@/utils/autoLayout';
 import { fileToImageAsset, isImageFile, toDisplayableFile } from '@/utils/image';
-import { saveImageAsset, saveProject } from '@/utils/storage';
+import { saveImageAsset } from '@/utils/assetStore';
+import { ensureFolderReady, ensureAlbumFolder, persistProject } from '@/utils/folderLibrary';
 import { PRESET_FORMATS } from '@/types';
 import type { ImageAsset } from '@/types';
+
+// 启动守卫在 StrictMode 下会跑两遍，提示只弹一次
+let folderGuardAlerted = false;
 
 type Step = 'upload' | 'settings' | 'generating';
 
@@ -29,6 +33,17 @@ export default function CreateWizard() {
   const [converting, setConverting] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // 启动时已启用文件夹模式但还没连上：不进入（§5.3），先回书架重连
+  useEffect(() => {
+    if (ensureFolderReady()) return;
+    if (!folderGuardAlerted) {
+      folderGuardAlerted = true;
+      alert('文件夹还没连上。先回书架页点「重新连接」，连上再生成相册吧');
+    }
+    navigate('/', { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ========== 图片上传 ==========
   const handleFileSelect = useCallback(async (files: FileList | null) => {
@@ -72,16 +87,15 @@ export default function CreateWizard() {
     setProgress(0);
 
     try {
-      // 1. 处理并保存所有图片
+      // 1. 先把照片处理成资产（这一步还不落盘）
       const imageAssets: ImageAsset[] = [];
       for (let i = 0; i < images.length; i++) {
         const asset = await fileToImageAsset(images[i].file);
-        await saveImageAsset(asset);
         imageAssets.push(asset);
-        setProgress(Math.round(((i + 1) / images.length) * 50));
+        setProgress(Math.round(((i + 1) / images.length) * 40));
       }
 
-      // 2. 自动排版生成项目
+      // 2. 自动排版生成项目（先有相册，照片才知道该写进哪个文件夹）
       const project = autoGenerateAlbum({
         projectName: projectName || '我的相册',
         themeId: selectedTheme,
@@ -93,17 +107,24 @@ export default function CreateWizard() {
         includeEnding,
       });
 
-      setProgress(80);
+      // 3. 已连接文件夹时，先把这本相册的文件夹建好
+      await ensureAlbumFolder(project);
 
-      // 3. 保存项目
-      await saveProject(project);
+      // 4. 照片逐张写盘（已连接 → 写进相册文件夹；未启用 → IndexedDB，现状）
+      for (let i = 0; i < imageAssets.length; i++) {
+        await saveImageAsset(project.id, imageAssets[i]);
+        setProgress(40 + Math.round(((i + 1) / imageAssets.length) * 50));
+      }
+
+      // 5. 保存项目：IndexedDB + 文件夹里的 相册数据.json
+      await persistProject(project);
       dispatch(setCurrentProject(project));
       // 跳转到编辑页面前，把当前页设置成第一页（封面）
       dispatch(setCurrentPageAction(0));
 
       setProgress(100);
 
-      // 4. 跳转到编辑器
+      // 6. 跳转到编辑器
       setTimeout(() => {
         navigate(`/editor/${project.id}`);
       }, 500);

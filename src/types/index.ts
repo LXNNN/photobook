@@ -113,6 +113,21 @@ export interface ImageAsset {
   createdAt: number;
 }
 
+/**
+ * IndexedDB 里的图片存储记录。启用文件夹模式并完成迁移后，原图以普通文件存在
+ * 磁盘（相册文件夹\照片\），这里的 blob 会被清掉，只剩缩略图与元数据；
+ * 渲染要用的 `ImageAsset`（blob 必填）由资产仓库（assetStore）负责补全。
+ */
+export interface StoredImageRecord {
+  id: string;
+  blob?: Blob;
+  thumbnail: string;
+  width: number;
+  height: number;
+  size: number;
+  createdAt: number;
+}
+
 export interface EditorState {
   currentPageIndex: number;
   selectedElementIds: string[];

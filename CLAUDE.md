@@ -1,0 +1,100 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## 项目概述
+
+电子相册网站（photo-book）：纯前端照片书编辑器。用户上传照片 → 自动排版（智能生成）或手动排版 → 翻书预览 → 导出 300dpi PDF 交给打印社。所有数据存在浏览器 IndexedDB，不上传服务器。
+
+- 技术栈：React 18 + TypeScript（strict）+ Vite 5 + Redux Toolkit + Tailwind CSS + page-flip（翻书动画）+ idb + jspdf + fflate + heic-to
+- 部署：GitHub Pages，地址 `https://LXNNN.github.io/photobook/`
+- 完整需求背景见 `项目设计文档.md` 和 `电子相册网站开发提示词.md`（后者是给 AI 的完整开发提示词，包含全部关键设计规则）
+- 这是一个个人项目，没有测试、没有 lint、没有 CI。验证靠真实浏览器手动测试（无头浏览器画不出书页，别用它验证渲染）
+
+## 常用命令
+
+```bash
+npm run dev       # 开发服务器，端口固定 5173
+npm run build     # tsc && vite build（类型检查 + 构建）
+npm run preview   # 预览构建产物
+```
+
+- **不要改 dev 端口**：IndexedDB 按源（协议+域名+端口）隔离，换端口 = 换源 = 空书架，用户会以为数据丢了
+- **装了新依赖要重启 dev server**：否则 Vite 预打包缓存里没有它，import 直接失败
+- 构建部署：`npm run build` 后手动把 dist 推到 gh-pages 分支
+
+## 架构总览
+
+### 数据模型与单位
+
+- 所有元素几何量（x/y/width/height）以 **mm** 存储；开本 `BookFormat` 定义在 `src/types/index.ts`（默认 A5：148×210mm）
+- `Project { pages: Page[] }`，`Page { background, elements: Element[], templateId? }`，`Element = ImageElement | TextElement | StickerElement`（含 rotation/opacity/zIndex/locked）
+- `ImageElement.imageId` 指向 IndexedDB 里单独存储的 `ImageAsset`（blob 原图 + 200px 缩略图 dataURL）。`crop` 是相对原图 0-1 的裁剪区
+- **裁剪属于「区域」不属于照片**：换位互换只换 `imageId`，永远不搬 `crop`（`projectSlice.swapImages`）。裁剪框的宽高比必须和所在框一致，否则 drawImage 会把照片拉变形——`fitCropToRatio` 是安全网，渲染时都会走一遍
+
+### 页面绘制只有一份实现（最重要）
+
+`src/engine/drawPageContent.ts` 的 `drawPageContent(ctx, page, format, dpi, assets)` 是全站唯一的页面绘制规则，以下所有地方都调它，**任何改动都不能另写一套**：
+
+- 编辑器主画布（`CanvasRenderer`，96dpi）
+- 左侧页缩略图（`PageThumbnail`，先 `ctx.setTransform(scale,...)` 整体缩放，dpi 仍传 96，坐标/字号/折行点与主画布逐字一致）
+- 首页书架封面（48dpi）
+- 预览页整页渲染（150dpi）
+- PDF 导出（300dpi）
+
+同文件的 `collectAssetIds(pages)` 收集全部图片/贴纸 id——绘制依赖它收得全不全，新增元素类型时两边都要记得。历史上 Viewer 自己抄过一份绘制逻辑，漏了旋转和 cover 裁剪，缩略图/预览全错。
+
+### 状态管理（Redux）
+
+- `projectSlice`：当前项目 + 撤销栈 `past[]`（深拷贝快照，最多 50 步）。**任何改动操作前先 `pushHistory()`**
+- `editorSlice`：当前页码、选中元素、zoom/pan；`uiSlice`：模式等
+- `serializableCheck: false`（存 blob URL 等）
+- 持久化：IndexedDB `photo-book-db`（`src/utils/storage.ts`），editor 里对 project 变更做了 3 秒防抖自动保存 + 手动保存
+
+### 模板系统（src/templates/ + utils/templateLibrary.ts）
+
+- `TEMPLATES` 是**模块级可变数组**（不是 Redux state）。React 组件必须用 `useSyncExternalStore(subscribeTemplates, getTemplatesVersion)` 订阅，否则增删模板后不重渲染
+- 模板元素用相对坐标（0-1），`applyTemplate()` 时乘开本尺寸落成 mm
+- 模板库 = 内置模板 + 用户自定义覆盖 − 用户删除。落盘在 IndexedDB（customTemplates / deletedTemplates 墓碑）。`initTemplateLibrary()` 在 `main.tsx` 里 React 渲染前 await
+- **内置模板删除必须记墓碑**（deletedTemplates store），否则下次启动随内置模板一起复活
+- `templates/` 不能反向 import `utils/storage`（循环引用）——持久化对齐都走 `utils/templateLibrary.ts`
+- 文案填充规则：`fixed: true` 的文字（装饰性小字，如 TIME 竖排字母、"旅行碎片"）保持 placeholder 不动；标题/正文按 `fontSizeRatio ≥ 0.04` 区分；正文字号用 `project.bodyFontSize`（12/14pt）；旅行/日常主题用模板专属文案库，其他主题用主题文案库
+- `pageElementsToTemplateElements` 写回模板时**必须带上 fixed 标记**，否则存出来的模板下次应用时装饰文字会被随机文案顶掉
+- 隐藏模板：`HIDDEN_TEMPLATE_IDS = ['full-image']`
+
+### 编辑器（src/pages/Editor.tsx + engine/）
+
+- `CanvasRenderer` 和 `InteractionManager` 是命令式类，通过 ref 持有，**每个项目只创建一次**（重建会中断拖拽）。交互事件通过回调桥接到 Redux dispatch；回调里用 `store.getState()` 取最新页码，避免闭包旧值
+- `InteractionManager` 处理：命中检测（含旋转包围盒）、8 个缩放手柄 + 旋转手柄、拖拽 + 对齐辅助线吸附、拖到另一张图片上高亮并换位（`swapImages`）、双击文字 → 覆盖 textarea 编辑、双击图片 → 裁剪弹窗
+- 屏幕→画布坐标换算用 `getBoundingClientRect()` 比例，已包含外层 CSS transform（zoom/pan），**不要再手动减 pan 除 zoom**
+- 空图片区域（模板里没填照片的 imageId 为空的元素）：加载资源时**必须跳过**，`getImageAsset(undefined)` 会抛 DataError 中断整个循环，排它后面的照片永远画不出来
+- 编辑器画布固定 96dpi，放大看必糊——这是已知的、用户接受的设计，别顺手"修"（和上传压缩是两回事）
+
+### 预览页（src/pages/Viewer.tsx + page-flip）
+
+- 先把所有页渲染成 150dpi JPEG blob（`toBlob` + object URL，离开时统一 revoke）；所有图片只解码一次（`decodeAssets`，按 id 并行），解码用的临时 object URL 解完立刻 revoke
+- PageFlip 在异步链里创建（等图片加载 + 动态 import）。必须：① 用 `cancelled` 标志 + `created` 变量防 StrictMode/依赖变化导致**同一容器上建两套书**（症状：残页、互相盖）；② 传**自己造的 div 壳**给 PageFlip，绝不能传 React 管的节点——`pageFlip.destroy()` 会把它删掉，React 不知道，书就永远消失
+- **只有点击书页才有翻页动画**；方向键/左右按钮走 `turnToNextPage/turnToPrevPage`，是瞬跳（量事件时序时别用它们）
+- 已知未修 bug：末页按右键会卡住一次（page-flip 的 `showNext()` 差一，末页再翻越界，按左要两次才退回来）
+- 闭合态/摊开态的投影、书脊、居中偏移是精细调过的视觉状态，改动前先读懂 `Viewer.tsx` 里的注释（合起态是镜像不是重合、摊开投影的亮灭时机与书脊相反）
+
+### 图片处理（src/utils/image.ts）
+
+- 上传策略按**印刷分辨率**定：长边 ≤ 4096 一律原样通过（iPhone 12MP 长边 4032 特意保住）；超过才缩到 4096。**不要按 MB 压缩**——那会同时砍分辨率，等于砍印刷质量
+- HEIC 用 `heic-to`（动态 import 懒加载，3MB 库），**不要换回 heic2any**（内置 libheif 太老，解不了新 iPhone 的 HEIC）
+- 书架封面优先用上传时存的 200px 缩略图（实测 699ms→35ms），别用原图下采样
+
+### 备份（src/utils/backup.ts）
+
+- 整库 zip（fflate `ZipPassThrough`，照片已是 JPEG 不再压缩），逐张流式读取，几百 MB 不压内存
+- zip 解开就是普通文件夹（相册数据.json + 照片/0001.jpg），用户照片不被锁在网站格式里
+- 导入分两遍：先读清单停下问重名（**覆盖要用本地相册的 id**，不是备份里的 id），再解照片写库。模板冲突规则：id 相同 = 同一模板直接更新；仅名字撞 = 两个都留、后导入的改名
+- 文件名的非法字符正则必须写 `\p{Cc}` 形式——**源码里永远别写裸控制字符**（会落成真实 NUL，整个文件变二进制）
+
+## 部署注意
+
+- `vite.config.ts` 的 `base: '/photobook/'` 和 `main.tsx` 的 `<BrowserRouter basename="/photobook">` 必须一致，改仓库名要两处一起改
+
+## 数据安全红线
+
+- 所有数据在用户浏览器本地。会让数据"看起来没了"的操作（换端口、清浏览器数据、动 IndexedDB schema 不迁移）都要先想清楚、先向用户解释

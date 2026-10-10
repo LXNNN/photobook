@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, store } from '@/store';
 import { setCurrentProject, setProjectList, createProject } from '@/store/projectSlice';
-import { getAllProjects, saveProject, deleteProject, getImageAsset } from '@/utils/storage';
+import { getAllProjects, deleteProject } from '@/utils/storage';
+import { getImageAsset, getImageMeta } from '@/utils/assetStore';
 import { getImageURL } from '@/utils/image';
 import { formatDate } from '@/utils/units';
 import { drawPageContent } from '@/engine/drawPageContent';
@@ -14,6 +15,19 @@ import {
   downloadBlob,
 } from '@/utils/backup';
 import type { ParsedBackup, ImportPlan, BackupBundle } from '@/utils/backup';
+import FolderBanner from '@/components/FolderBanner';
+import { subscribeFolderStatus, getFolderStatus, pickFolderHandle } from '@/utils/folderMode';
+import type { ConnectPreview } from '@/utils/folderLibrary';
+import {
+  ensureFolderReady,
+  prepareConnect,
+  runSync,
+  reconnectFolder,
+  deleteAlbum,
+  getAlbumFolderName,
+  takeFolderNotices,
+  persistProject,
+} from '@/utils/folderLibrary';
 import { PRESET_FORMATS } from '@/types';
 import type { Project, ImageElement } from '@/types';
 
@@ -32,6 +46,20 @@ interface ConflictState {
   collisions: BackupBundle[];
 }
 
+/** 连接文件夹前的确认弹窗（迁移 or 载入已有数据） */
+interface ConnectDialogState {
+  handle: FileSystemDirectoryHandle;
+  preview: ConnectPreview;
+  mode: 'fresh' | 'migrate' | 'load';
+}
+
+/** 删除相册确认（已连接文件夹时：磁盘上的文件夹也会一起删，§6.10） */
+interface DeleteDialogState {
+  project: Project;
+  folderName: string;
+  photoCount: number;
+}
+
 export default function ProjectList() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -44,15 +72,25 @@ export default function ProjectList() {
   const [toast, setToast] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 文件夹连接状态（模块级可订阅对象，同 templates 的既有模式）
+  const folderStatus = useSyncExternalStore(subscribeFolderStatus, getFolderStatus);
+  const [connectDialog, setConnectDialog] = useState<ConnectDialogState | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 8000);
     return () => clearTimeout(t);
   }, [toast]);
 
+  // 连接/合并在后台完成时 dataVersion 会 +1，书架跟着刷新；
+  // 顺带取走文件夹层攒下的轻提示（同步移除、模板文件读坏等）
   useEffect(() => {
     loadProjects();
-  }, []);
+    const notes = takeFolderNotices();
+    if (notes.length > 0) setToast(notes.join(' '));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folderStatus.dataVersion]);
 
   async function loadProjects() {
     const list = await getAllProjects();
@@ -78,17 +116,15 @@ export default function ProjectList() {
           // 花时间。而原图是 12MP，缩到封面尺寸每张要 80ms —— 6 本相册实测 699ms，
           // 换成缩略图后 35ms。慢的不是解码，是这个巨大的下采样。
           // 缩略图是 dataURL，顺带也免掉了 objectURL 的回收问题。
+          // 启用文件夹模式后这条路更重要：读全图要逐个读磁盘文件。
           const imageElements = firstPage.elements.filter(el => el.type === 'image') as ImageElement[];
           const assets = new Map<string, HTMLImageElement>();
 
           await Promise.all(imageElements.map(async (el) => {
-            const asset = await getImageAsset(el.imageId);
-            if (!asset) return;
-
             const img = new Image();
-
-            if (asset.thumbnail) {
-              img.src = asset.thumbnail;
+            const meta = await getImageMeta(el.imageId);
+            if (meta?.thumbnail) {
+              img.src = meta.thumbnail;
               await new Promise<void>((resolve) => {
                 img.onload = () => resolve();
                 img.onerror = () => resolve();
@@ -97,7 +133,9 @@ export default function ProjectList() {
               return;
             }
 
-            // 老数据可能没存缩略图，退回原图
+            // 老数据可能没存缩略图，退回原图（已启用文件夹时从磁盘读）
+            const asset = await getImageAsset(el.imageId);
+            if (!asset) return;
             const url = getImageURL(asset);
             img.src = url;
             await new Promise<void>((resolve) => {
@@ -123,11 +161,13 @@ export default function ProjectList() {
           // 降级：直接拿第一张图片当封面
           const firstImage = firstPage.elements.find(el => el.type === 'image') as ImageElement | undefined;
           if (firstImage) {
-            const asset = await getImageAsset(firstImage.imageId);
-            if (asset) {
-              // 缩略图优先：它本来就只是个封面，够用，而且不会留下没人回收的 objectURL
-              const url = asset.thumbnail || getImageURL(asset);
-              setCoverUrls(prev => ({ ...prev, [project.id]: url }));
+            // 缩略图优先：它本来就只是个封面，够用，而且不会留下没人回收的 objectURL
+            const meta = await getImageMeta(firstImage.imageId);
+            if (meta?.thumbnail) {
+              setCoverUrls(prev => ({ ...prev, [project.id]: meta.thumbnail }));
+            } else {
+              const asset = await getImageAsset(firstImage.imageId);
+              if (asset) setCoverUrls(prev => ({ ...prev, [project.id]: getImageURL(asset) }));
             }
           }
         }
@@ -137,11 +177,13 @@ export default function ProjectList() {
 
   async function handleCreate() {
     if (!newName.trim()) return;
+    if (!guarded('创建')) return;
     dispatch(createProject({ name: newName.trim() }));
     setTimeout(async () => {
       const state = store.getState();
       if (state.project.current) {
-        await saveProject(state.project.current);
+        // 已连接文件夹时，persistProject 顺手把新相册的文件夹建好（§6.1）
+        await persistProject(state.project.current);
         navigate(`/editor/${state.project.current.id}`);
       }
     }, 50);
@@ -149,23 +191,180 @@ export default function ProjectList() {
     setNewName('');
   }
 
-  async function handleDelete(id: string, e: React.MouseEvent) {
+  /** 守卫（§5.3）：文件夹模式已启用但没连上时，拦下需要读写磁盘的动作 */
+  function guarded(action: string): boolean {
+    if (ensureFolderReady()) return true;
+    setToast(`文件夹还没连上，先点上面的「重新连接」再${action}`);
+    return false;
+  }
+
+  async function handleDelete(project: Project, e: React.MouseEvent) {
     e.stopPropagation();
-    if (!confirm('确定删除这个相册吗？此操作不可恢复。')) return;
-    await deleteProject(id);
-    loadProjects();
+    if (!ensureFolderReady()) {
+      setToast('文件夹还没连上，先点上面的「重新连接」再删除（删除时要同时清理磁盘上的照片）');
+      return;
+    }
+    if (getFolderStatus().state !== 'connected') {
+      // 未启用文件夹模式：维持现状（只删浏览器里的记录）
+      if (!confirm('确定删除这个相册吗？此操作不可恢复。')) return;
+      await deleteProject(project.id);
+      await loadProjects();
+      return;
+    }
+    // 已连接：删之前必须说清磁盘上的文件夹也会一起删（§6.10；网站里唯一删磁盘文件的地方）
+    const photoCount = new Set(
+      project.pages
+        .flatMap((p) => p.elements)
+        .filter((el) => el.type === 'image' && el.imageId)
+        .map((el) => (el as ImageElement).imageId)
+    ).size;
+    setDeleteDialog({
+      project,
+      folderName: getAlbumFolderName(project.id) ?? project.name,
+      photoCount,
+    });
   }
 
   function handleEdit(project: Project, e: React.MouseEvent) {
     e.stopPropagation();
+    if (!guarded('编辑')) return;
     dispatch(setCurrentProject(project));
     navigate(`/editor/${project.id}`);
   }
 
   function handlePreview(project: Project, e: React.MouseEvent) {
     e.stopPropagation();
+    if (!guarded('预览')) return;
     dispatch(setCurrentProject(project));
     navigate(`/viewer/${project.id}`);
+  }
+
+  // ==================== 文件夹模式：连接 / 重连 / 删除 ====================
+
+  /** 选择 / 重新选择 / 重新指认文件夹：统一「先看两边有什么 → 需要时弹窗确认 → 合并」 */
+  async function handlePickFolder() {
+    if (busy) return;
+    let handle: FileSystemDirectoryHandle | undefined;
+    try {
+      // 必须在点击手势里直接弹选择框，前面不能有别的 await
+      handle = await pickFolderHandle();
+    } catch {
+      setToast('没能打开文件夹选择框，请再试一次');
+      return;
+    }
+    if (!handle) return; // 用户取消了选择
+
+    setBusy({ title: '正在看看文件夹里有什么…', done: 0, total: 0 });
+    try {
+      const prep = await prepareConnect(handle);
+      setBusy(null);
+      if (!prep.ok) {
+        setToast(
+          prep.reason === 'denied'
+            ? '没有连接成功。照片都还在，可以再试一次，或在浏览器设置里允许本站的文件夹访问'
+            : '连接文件夹失败，请再试一次'
+        );
+        return;
+      }
+      const p = prep.preview;
+      const mode: ConnectDialogState['mode'] =
+        p.hasPhotoBook && p.folderAlbumCount > 0
+          ? 'load' // 文件夹里已经有相册（换电脑/换浏览器场景）
+          : p.localAlbumCount > 0
+            ? 'migrate' // 本机有相册要搬进去
+            : 'fresh'; // 两边都空：直接建结构
+      if (mode === 'fresh') {
+        await runConnect(handle, p, 'fresh');
+      } else {
+        setConnectDialog({ handle, preview: p, mode });
+      }
+    } catch (err) {
+      setBusy(null);
+      console.error('检查文件夹失败', err);
+      setToast('连接文件夹时出了点问题，可以再试一次');
+    }
+  }
+
+  /** 弹窗确认后（或全新文件夹直接）开始合并。迁移与载入共用 runSync 一套规则（§6.5） */
+  async function runConnect(
+    handle: FileSystemDirectoryHandle,
+    preview: ConnectPreview,
+    mode: ConnectDialogState['mode']
+  ) {
+    setConnectDialog(null);
+    const migrating = mode === 'migrate';
+    setBusy({ title: migrating ? '正在把照片写进文件夹…' : '正在连接文件夹…', done: 0, total: 0 });
+    try {
+      const result = await runSync(handle, {
+        // load 时文件夹里已有结构；fresh / migrate 都要先建好
+        createRoot: mode !== 'load',
+        onProgress: (p) =>
+          setBusy((prev) => (prev ? { ...prev, done: p.done, total: p.total } : prev)),
+      });
+      setBusy(null);
+      const parts: string[] = [];
+      if (migrating) {
+        parts.push(
+          `搬家完成！照片已经在「${preview.folderName}」\\photo-book\\ 里（每本相册一个文件夹），现在清浏览器数据也不怕了`
+        );
+      } else {
+        if (result.loaded > 0) parts.push(`已从文件夹载入 ${result.loaded} 本相册`);
+        if (result.pushed > 0) parts.push(`已把 ${result.pushed} 本相册写进文件夹`);
+        if (parts.length === 0) parts.push(`已连接文件夹：「${preview.folderName}」`);
+      }
+      const notes = takeFolderNotices();
+      if (notes.length > 0) parts.push(notes.join(' '));
+      setToast(parts.join(' '));
+    } catch (err) {
+      setBusy(null);
+      console.error('连接文件夹失败', err);
+      setToast('连接中途出了点问题。磁盘和浏览器里的数据都没丢，可以重试（已写好的会跳过）');
+    }
+  }
+
+  /** 浏览器重启后权限待确认：在点击手势里重新申请，通过后立刻合并（§6.4） */
+  async function handleReconnect() {
+    if (busy) return;
+    setBusy({ title: '正在重新连接…', done: 0, total: 0 });
+    const r = await reconnectFolder();
+    setBusy(null);
+    if (r.ok) {
+      const parts = [`已重新连接文件夹：「${getFolderStatus().folderName}」`];
+      if (r.result.pushed > 0) parts.push(`有 ${r.result.pushed} 本相册的改动已补写进文件夹`);
+      const notes = takeFolderNotices();
+      if (notes.length > 0) parts.push(notes.join(' '));
+      setToast(parts.join(' '));
+    } else if (r.reason === 'denied') {
+      setToast('没有连接成功。照片都还在，可以再试一次，或在浏览器设置里允许本站的文件夹访问');
+    } else if (r.reason === 'folder-missing') {
+      setToast('找不到相册文件夹了。请点「重新指认文件夹」重新选一下，数据不会丢');
+    } else {
+      setToast('重新连接失败，请再试一次');
+    }
+  }
+
+  /** 删除确认弹窗里点了「删除」：书架记录 + 磁盘文件夹一起删 */
+  async function confirmDelete() {
+    if (!deleteDialog) return;
+    const { project } = deleteDialog;
+    setBusy({ title: '正在删除相册…', done: 0, total: 0 });
+    try {
+      const r = await deleteAlbum(project.id);
+      setBusy(null);
+      setDeleteDialog(null);
+      if (r.failed.length > 0) {
+        setToast(
+          `相册已删除，但文件夹里有 ${r.failed.length} 个文件没能删掉（可能被占用），可以在电脑上手动删除 photo-book\\${r.folderName}`
+        );
+      } else {
+        setToast(`《${project.name}》已删除，电脑文件夹里的数据也清干净了`);
+      }
+      // deleteAlbum 内部已 bumpDataVersion，上面的 effect 会刷新书架
+    } catch (err) {
+      setBusy(null);
+      setDeleteDialog(null);
+      setToast(err instanceof Error ? err.message : '删除失败，文件夹没有动');
+    }
   }
 
   // ==================== 备份：导出 / 导入 ====================
@@ -173,6 +372,7 @@ export default function ProjectList() {
   // 都是重活（几百 MB 要读、要压、要写），全程盖一层进度，并且明说别关页面。
 
   async function handleExport() {
+    if (!guarded('导出备份')) return;
     setBusy({ title: '正在打包相册…', done: 0, total: 0 });
     try {
       const { blob, filename, templateCount } = await exportAllProjects((done, total) => {
@@ -277,25 +477,16 @@ export default function ProjectList() {
           </div>
         </div>
 
-        {/* 备份提醒。
+        {/* 文件夹状态横幅（§5.2）。
             放在这个位置是有意的：网站没法在"用户清浏览器数据/换电脑"的那一刻提醒他——
-            那时候这个页面根本没在运行。所以唯一能做的，是每次他打开书架就把话说清楚，
-            并且指明出路（右下角那两个按钮）。 */}
-        <div className="flex-shrink-0 mx-8 mb-1 px-5 py-3.5 rounded-lg bg-amber-50 border border-amber-300 flex items-start gap-3">
-          <span className="text-lg leading-none mt-0.5">⚠️</span>
-          <div className="text-sm leading-relaxed">
-            <span className="font-semibold text-amber-900">
-              相册只存在这台电脑的这个浏览器里，没有上传到网上。
-            </span>
-            <span className="text-amber-800">
-              清除浏览数据、换浏览器或换电脑，都可能让相册消失。请点右下角
-              <span className="font-medium">「导出备份」</span>
-              ，把生成的 zip 文件存到网盘或 U 盘；换电脑时用
-              <span className="font-medium">「导入备份」</span>
-              就能原样恢复。
-            </span>
-          </div>
-        </div>
+            那时候这个页面根本没在运行。所以唯一能做的，是每次他打开书架就把「数据在哪」
+            说清楚。浏览器不支持文件夹模式时，组件内部会退回原来那条琥珀色备份提醒。 */}
+        <FolderBanner
+          status={folderStatus}
+          busy={busy !== null}
+          onPick={handlePickFolder}
+          onReconnect={handleReconnect}
+        />
 
         {/* 书架内容 */}
         <div className="flex-1 overflow-auto p-8" style={{ paddingTop: '2rem' }}>
@@ -303,6 +494,16 @@ export default function ProjectList() {
             <div className="flex flex-col items-center justify-center h-full text-gray-400">
               <div className="text-6xl mb-4">📖</div>
               <p className="text-lg">还没有相册，点击右侧创建第一个吧</p>
+              {/* 换电脑/换浏览器恢复的入口（§5.3） */}
+              {folderStatus.state !== 'unsupported' && folderStatus.state !== 'connected' && (
+                <button
+                  onClick={handlePickFolder}
+                  disabled={busy !== null}
+                  className="mt-6 px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm disabled:opacity-50"
+                >
+                  📁 连接已有的相册文件夹
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
@@ -338,7 +539,7 @@ export default function ProjectList() {
                     />
                     {/* 删除按钮 */}
                     <button
-                      onClick={(e) => handleDelete(project.id, e)}
+                      onClick={(e) => handleDelete(project, e)}
                       className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 flex items-center justify-center text-sm z-10"
                     >
                       ×
@@ -417,13 +618,13 @@ export default function ProjectList() {
         {/* 底部按钮区（自动推到最底部） */}
         <div className="flex flex-col gap-2 sm:gap-3 flex-shrink-0">
           <button
-            onClick={() => navigate('/create')}
+            onClick={() => { if (guarded('创建')) navigate('/create'); }}
             className="w-full px-4 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-amber-600 to-amber-800 text-white rounded-lg hover:from-amber-700 hover:to-amber-900 transition-all font-medium shadow-sm text-sm"
           >
             ✨ 智能生成
           </button>
           <button
-            onClick={() => setShowCreate(true)}
+            onClick={() => { if (guarded('创建')) setShowCreate(true); }}
             className="w-full px-4 sm:px-5 py-2 sm:py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
           >
             + 空白相册
@@ -441,7 +642,7 @@ export default function ProjectList() {
               📦 导出备份
             </button>
             <button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => { if (guarded('导入备份')) fileInputRef.current?.click(); }}
               disabled={busy !== null}
               title="从备份 zip 里恢复相册"
               className="px-2 sm:px-3 py-1.5 sm:py-2 bg-white/70 border border-gray-300 text-gray-600 rounded-lg hover:bg-white transition-colors text-xs sm:text-sm disabled:opacity-50"
@@ -458,6 +659,78 @@ export default function ProjectList() {
           />
         </div>
       </div>
+
+      {/* 连接文件夹前的确认：迁移（本机 → 文件夹）或载入（文件夹 → 本机），文案 §9.2 */}
+      {connectDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setConnectDialog(null)}>
+          <div className="bg-white rounded-xl p-6 w-[30rem] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            {connectDialog.mode === 'migrate' ? (
+              <>
+                <h2 className="text-lg font-semibold mb-3">把书架上的相册搬进文件夹？</h2>
+                <p className="text-sm text-gray-600 leading-relaxed mb-4">
+                  书架上现有 {connectDialog.preview.localAlbumCount} 本相册、{connectDialog.preview.localPhotoCount} 张照片。
+                  照片会一张一张写进「{connectDialog.preview.folderName}\photo-book\」下各本相册自己的文件夹里，
+                  全部验证无误后再清理浏览器里的大图（缩略图保留）。中途关掉页面也没关系，下次接着搬。
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-semibold mb-3">
+                  这个文件夹里已经有相册（{connectDialog.preview.folderAlbumCount} 本）
+                </h2>
+                <p className="text-sm text-gray-600 leading-relaxed mb-4">
+                  要载入到这台电脑吗？两边都有的相册会保留更新的那本；这台电脑书架上有、文件夹里没有的，会一并写进文件夹。其余的原样都在。
+                </p>
+              </>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConnectDialog(null)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => runConnect(connectDialog.handle, connectDialog.preview, connectDialog.mode)}
+                className="px-4 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800"
+              >
+                {connectDialog.mode === 'migrate' ? '开始搬家' : '载入'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 删除相册确认（已连接文件夹：磁盘上的文件夹会一起删，§6.10 / 文案 §9.2） */}
+      {deleteDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setDeleteDialog(null)}>
+          <div className="bg-white rounded-xl p-6 w-[30rem] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold mb-3">删除《{deleteDialog.project.name}》？</h2>
+            <p className="text-sm text-gray-700 leading-relaxed mb-3">
+              这本相册会从书架里删掉，{deleteDialog.photoCount} 张照片和它的排版数据也会从电脑文件夹（photo-book\
+              {deleteDialog.folderName}）里一并删除，
+              <span className="font-semibold text-red-600">不进回收站，不可恢复</span>。
+            </p>
+            <p className="text-xs text-gray-400 mb-4">
+              想留个底的话，可以先用「导出备份」，或把这个文件夹复制一份。
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteDialog(null)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 新建弹窗 */}
       {showCreate && (
@@ -557,9 +830,10 @@ export default function ProjectList() {
         </div>
       )}
 
-      {/* 结果提示 */}
+      {/* 结果提示。背景必须用实心色：别写成 /92 这类透明度 —— Tailwind 只认档位值
+          （/90、/75…），非档位的会被静默丢掉，背景直接变透明，白字落在白页上完全看不清 */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] max-w-lg px-5 py-3 bg-gray-900/92 text-white text-sm rounded-lg shadow-lg">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] max-w-lg px-5 py-3 bg-gray-900 text-white text-sm rounded-lg shadow-lg">
           {toast}
         </div>
       )}

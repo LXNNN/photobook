@@ -17,6 +17,27 @@ import {
 // 内存中的模板库在 @/templates 里（模块级可变数组），落盘在 utils/storage。
 // 这个模块负责把两边对齐，避免 templates 反向依赖 storage 形成循环引用。
 
+// ==================== 文件夹镜像钩子 ====================
+// 模板库改动后，文件夹层要跟着更新 `我的模板.json`。依赖方向规定本模块
+// 不许 import folderLibrary（会循环引用），所以反过来由 folderLibrary
+// 在这里注册一个回调，模板落盘完成后招呼它一声。
+
+type TemplateChangeHook = () => void;
+let templateChangeHook: TemplateChangeHook | null = null;
+
+/** 由文件夹层注册（传 undefined 注销）。回调在模板库落盘之后触发 */
+export function setTemplateChangeHook(hook: TemplateChangeHook | undefined): void {
+  templateChangeHook = hook ?? null;
+}
+
+function notifyTemplateChanged(): void {
+  try {
+    templateChangeHook?.();
+  } catch {
+    // 镜像写盘失败不该影响模板库本身的操作
+  }
+}
+
 /**
  * 启动时加载模板库：先套用用户保存过的自定义模板，再剔除用户删掉的模板。
  * 必须在 React 渲染前 await 完。
@@ -48,6 +69,7 @@ export async function deleteTemplateFromLibrary(id: string): Promise<void> {
   if (isBuiltinTemplate(id)) {
     await saveDeletedTemplate(id);
   }
+  notifyTemplateChanged();
 }
 
 /**
@@ -61,6 +83,7 @@ export async function restoreTemplateFromLibrary(id: string): Promise<boolean> {
 
   await deleteCustomTemplate(id);
   await clearDeletedTemplate(id);
+  notifyTemplateChanged();
   return true;
 }
 
@@ -68,4 +91,5 @@ export async function restoreTemplateFromLibrary(id: string): Promise<boolean> {
 export async function persistTemplate(template: Parameters<typeof saveCustomTemplate>[0]): Promise<void> {
   applyCustomTemplate(template);
   await saveCustomTemplate(template);
+  notifyTemplateChanged();
 }

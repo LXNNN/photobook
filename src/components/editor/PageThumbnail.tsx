@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Page, BookFormat } from '@/types';
 import { mmToPx } from '@/utils/units';
-import { getImageAsset } from '@/utils/storage';
+import { getImageAsset } from '@/utils/assetStore';
 import { getImageURL } from '@/utils/image';
 import { drawPageContent } from '@/engine/drawPageContent';
 

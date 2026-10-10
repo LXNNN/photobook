@@ -138,8 +138,11 @@ export function loadImage(file: File | Blob | string): Promise<HTMLImageElement>
   });
 }
 
-/** 创建缩略图 base64（传入已解码的图片，避免重复解码） */
-async function createThumbnail(img: HTMLImageElement, maxSize: number): Promise<string> {
+/**
+ * 创建缩略图 base64（传入已解码的图片，避免重复解码）。
+ * 文件夹模式也从这里补缩略图：照片在磁盘、缩略图丢了时按同一套参数重生成。
+ */
+export async function createThumbnail(img: HTMLImageElement, maxSize: number): Promise<string> {
   const canvas = document.createElement('canvas');
   const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
   canvas.width = img.width * scale;

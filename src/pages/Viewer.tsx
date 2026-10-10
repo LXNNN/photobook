@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch } from '@/store';
 import { setCurrentProject } from '@/store/projectSlice';
-import { getProject, getImageAsset } from '@/utils/storage';
+import { getProject } from '@/utils/storage';
+import { getImageAsset } from '@/utils/assetStore';
+import { ensureFolderReady } from '@/utils/folderLibrary';
 import { getImageURL, loadImage } from '@/utils/image';
 import { mmToPx } from '@/utils/units';
 import { drawPageContent, collectAssetIds } from '@/engine/drawPageContent';
@@ -15,6 +17,9 @@ interface BookSpan {
   left: number;
   right: number;
 }
+
+// 启动守卫在 StrictMode 下会跑两遍，提示只弹一次
+let folderGuardAlerted = false;
 
 /**
  * 根据当前页计算书本可见范围
@@ -50,6 +55,17 @@ export default function Viewer() {
   const [flipToClosed, setFlipToClosed] = useState(false); // 这趟翻页的落点是"只有一页"的合起态
   const [entered, setEntered] = useState(false); // 入场动画完成
   const [exporting, setExporting] = useState(false); // 导出中
+
+  // 启动时已启用文件夹模式但还没连上：不进入预览（§5.3），先回书架重连
+  useEffect(() => {
+    if (ensureFolderReady()) return;
+    if (!folderGuardAlerted) {
+      folderGuardAlerted = true;
+      alert('文件夹还没连上。照片暂时读不出来，先回书架页点「重新连接」再预览吧');
+    }
+    navigate('/', { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 页面图是 object URL，离开预览页时统一还回去。
   // ref 里攒了本次挂载产生过的全部 URL（含 StrictMode 下多跑那一轮的），

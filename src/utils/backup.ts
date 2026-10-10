@@ -3,14 +3,25 @@ import type { Project } from '@/types';
 import { collectAssetIds } from '@/engine/drawPageContent';
 import {
   getAllProjects,
-  getImageAsset,
-  saveImageAsset,
-  saveProject,
   getAllCustomTemplates,
-  saveCustomTemplate,
   type CustomTemplateRecord,
 } from './storage';
+import { getImageAsset, saveImageAsset } from './assetStore';
+import {
+  ensureAlbumFolder,
+  getAlbumFolderName,
+  getImageLocations,
+  isFolderConnected,
+  persistProject,
+} from './folderLibrary';
 import { generateId } from './units';
+import { safeFolderName, extFor } from './fileNames';
+
+// 模板合并规则与文件夹模式共用（提取到 templateImport.ts，避免循环引用）；
+// 这里转出去，现有 import 方不用改
+import { isUsableTemplate } from './templateImport';
+export { importTemplates } from './templateImport';
+export type { TemplateImportResult } from './templateImport';
 
 /**
  * 备份包：把整个书架打包成一个 zip，或者从 zip 里恢复回来。
@@ -102,38 +113,6 @@ export interface ImportPlan {
 }
 
 // ==================== 导出 ====================
-
-/**
- * Windows 不允许文件名里有这些字符；控制字符（\p{Cc}）一并算进去。
- *
- * 控制字符要写成 \p{Cc}，千万别在源码里直接敲一个控制字符范围 ——
- * 那会往文件里塞进真实的 NUL，屏幕上看不见，但整个文件会被当成二进制，
- * 编辑器和 diff 全都读不了（这个坑真踩过一次）。
- */
-const UNSAFE_NAME = /[\\/:*?"<>|\p{Cc}]/gu;
-
-/** 把相册名洗成能当文件夹名的样子，重名就加序号 */
-function safeFolderName(name: string, used: Set<string>): string {
-  let base = (name || '').replace(UNSAFE_NAME, '_').trim().replace(/[. ]+$/, '');
-  if (!base) base = '未命名相册';
-  // 太长的名字在 Windows 上容易踩路径长度限制
-  if (base.length > 60) base = base.slice(0, 60);
-
-  let out = base;
-  let i = 2;
-  while (used.has(out)) out = `${base} (${i++})`;
-  used.add(out);
-  return out;
-}
-
-function extFor(type: string): string {
-  if (type === 'image/png') return '.png';
-  if (type === 'image/webp') return '.webp';
-  if (type === 'image/gif') return '.gif';
-  if (type === 'image/bmp') return '.bmp';
-  if (type === 'image/avif') return '.avif';
-  return '.jpg';
-}
 
 function dateStamp(): string {
   const d = new Date();
@@ -349,13 +328,29 @@ export async function importBackups(
       throw new Error(`「${bundle.project.name}」的数据解不开，备份包可能损坏了`);
     }
 
+    // 先把项目定下来（覆盖时用本地 id，理由见 ImportPlan.targetId 的注释），
+    // 照片才知道该写进哪本相册
+    const project: Project =
+      mode === 'duplicate'
+        ? { ...bundle.project, id: generateId(), name: importedName(bundle.project.name), updatedAt: Date.now() }
+        : { ...bundle.project, id: targetId ?? bundle.project.id, updatedAt: Date.now() };
+
+    // 已连接文件夹时，先建好这本相册的文件夹
+    await ensureAlbumFolder(project);
+    const connected = isFolderConnected();
+    const albumFolder = connected ? getAlbumFolderName(project.id) : undefined;
+
     for (const meta of bundle.images) {
       const bytes = entries[`${bundle.folder}/${meta.file}`];
       if (bytes && bytes.length > 0) {
-        // 同一个 id 的图内容必然相同（id 是上传时生成的），本地已经有了就别重写
-        const exists = await getImageAsset(meta.imageId);
-        if (!exists) {
-          await saveImageAsset({
+        // 同一个 id 的图内容必然相同（id 是上传时生成的），本地已经有了就别重写。
+        // 文件夹模式按「本相册」判重：这张照片必须在这本相册自己的文件夹里有一份
+        // （每本相册自包含，删掉别的相册不影响它），哪怕别的相册已经有同样的图
+        const alreadyHere = connected
+          ? getImageLocations(meta.imageId).some((l) => l.folder === albumFolder)
+          : Boolean(await getImageAsset(meta.imageId));
+        if (!alreadyHere) {
+          await saveImageAsset(project.id, {
             id: meta.imageId,
             // unzipSync 出来的字节流必然是普通 ArrayBuffer（zip 就在内存里），
             // 但它的类型标成了宽泛的 ArrayBufferLike，含 SharedArrayBuffer，
@@ -373,12 +368,8 @@ export async function importBackups(
       onProgress?.(++done, total);
     }
 
-    const project: Project =
-      mode === 'duplicate'
-        ? { ...bundle.project, id: generateId(), name: importedName(bundle.project.name), updatedAt: Date.now() }
-        : { ...bundle.project, id: targetId ?? bundle.project.id, updatedAt: Date.now() };
-
-    await saveProject(project);
+    // 存项目：IndexedDB + 这本的 相册数据.json（含照片清单）
+    await persistProject(project);
     onProgress?.(++done, total);
   }
 
@@ -386,77 +377,5 @@ export async function importBackups(
 }
 
 // ==================== 自定义模板导入 ====================
-
-/**
- * 导入的模板来自外部文件，可能被改坏、也可能是旧版本导出的。
- * 这里做最低限度的校验，结构不对就整个丢掉 —— 让 NaN 坐标进了库，
- * 套用模板时整页元素会飞到画布外面，比少一个模板难查得多。
- */
-function isUsableTemplate(t: unknown): t is CustomTemplateRecord {
-  const tpl = t as CustomTemplateRecord;
-  if (!tpl || typeof tpl.id !== 'string' || typeof tpl.name !== 'string') return false;
-  if (!Array.isArray(tpl.elements) || tpl.elements.length === 0) return false;
-  return tpl.elements.every(
-    (el) =>
-      !!el &&
-      (el.type === 'image' || el.type === 'text') &&
-      [el.x, el.y, el.width, el.height].every(
-        (n) => typeof n === 'number' && Number.isFinite(n)
-      )
-  );
-}
-
-export interface TemplateImportResult {
-  /** 新增的（含被改名的） */
-  added: number;
-  /** 覆盖掉的同 id 模板 */
-  updated: number;
-  /** 其中因为重名而改过名的 */
-  renamed: number;
-}
-
-/**
- * 把备份包里的自定义模板写进库。
- *
- * 冲突规则：**id 相同就是同一个模板**（比如把自己电脑的备份导回来），直接更新，
- * 反复导入也只有一个；**只是名字撞上、id 不同的，两个都留**，后导入的改名成
- * 「XX（导入）」。这样两头都不会丢东西，也不会越导越多副本。
- */
-export async function importTemplates(
-  templates: CustomTemplateRecord[]
-): Promise<TemplateImportResult> {
-  if (templates.length === 0) return { added: 0, updated: 0, renamed: 0 };
-
-  const local = await getAllCustomTemplates();
-  const localIds = new Set(local.map((t) => t.id));
-  const takenNames = new Set(local.map((t) => t.name));
-
-  let added = 0;
-  let updated = 0;
-  let renamed = 0;
-
-  for (const tpl of templates) {
-    if (!isUsableTemplate(tpl)) continue;
-
-    if (localIds.has(tpl.id)) {
-      await saveCustomTemplate({ ...tpl, category: '我的模板' });
-      updated += 1;
-      continue;
-    }
-
-    let name = tpl.name;
-    if (takenNames.has(name)) {
-      name = `${tpl.name}（导入）`;
-      for (let i = 2; takenNames.has(name); i++) name = `${tpl.name}（导入${i}）`;
-      renamed += 1;
-    }
-    takenNames.add(name);
-    localIds.add(tpl.id);
-
-    // category 强制成「我的模板」：模板面板靠它决定归到哪一组、要不要显示删除按钮
-    await saveCustomTemplate({ ...tpl, name, category: '我的模板' });
-    added += 1;
-  }
-
-  return { added, updated, renamed };
-}
+// importTemplates 与模板合法性校验已提取到 templateImport.ts（文件夹模式共用），
+// 在本文件顶部 re-export 出去了。
