@@ -266,10 +266,10 @@ export const TEMPLATES: TemplateDefinition[] = [
     description: '2x2 均匀网格，适合展示系列照片',
     thumbnail: 'four-grid',
     elements: [
-      { type: 'image', x: 0.05, y: 0.05, width: 0.43, height: 0.43, cropHint: 'cover' },
-      { type: 'image', x: 0.52, y: 0.05, width: 0.43, height: 0.43, cropHint: 'cover' },
-      { type: 'image', x: 0.05, y: 0.52, width: 0.43, height: 0.43, cropHint: 'cover' },
-      { type: 'image', x: 0.52, y: 0.52, width: 0.43, height: 0.43, cropHint: 'cover' },
+      { type: 'image', x: 0.0554, y: 0.0657, width: 0.43, height: 0.43, cropHint: 'cover' },
+      { type: 'image', x: 0.5135, y: 0.0657, width: 0.43, height: 0.43, cropHint: 'cover' },
+      { type: 'image', x: 0.0588, y: 0.5152, width: 0.43, height: 0.43, cropHint: 'cover' },
+      { type: 'image', x: 0.5135, y: 0.5176, width: 0.43, height: 0.43, cropHint: 'cover' },
     ],
   },
   {
