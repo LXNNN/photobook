@@ -100,7 +100,7 @@ export const TEMPLATES: TemplateDefinition[] = [
       // 照片（满幅大图，四周留白；顶部文字区加大、图片高度减小）
       { type: 'image', x: 0.082, y: 0.431, width: 0.828, height: 0.506, cropHint: 'cover' },
       // 右上大标题（可修改，右侧对齐基准）
-      { type: 'text', x: 0.667, y: 0.063, width: 0.256, height: 0.13, placeholder: '北欧\n旅行纪', fontSizeRatio: 0.11, textAlign: 'right', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1.05 },
+      { type: 'text', x: 0.667, y: 0.063, width: 0.256, height: 0.13, placeholder: '时间\n旅行纪', fontSizeRatio: 0.11, textAlign: 'right', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1.05 },
       // ——作者名（标题下方）
       { type: 'text', x: 0.663, y: 0.228, width: 0.256, height: 0.025, placeholder: '——作者名', fontSizeRatio: 0.031, textAlign: 'right', color: '#888888', lineHeight: 1, fixed: true },
       // 两个四角星（小、大，位于 TIME 上方）
