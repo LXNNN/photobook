@@ -287,7 +287,7 @@ export default function CreateWizard() {
 
             {/* 主题选择 */}
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-3">选择主题</label>
+              <label className="block text-sm font-medium text-gray-700 mb-3">选择文案主题</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {THEMES.map((theme) => (
                   <button
@@ -305,6 +305,9 @@ export default function CreateWizard() {
                   </button>
                 ))}
               </div>
+              <p className="text-xs text-gray-400 mt-2">
+                主题仅影响文案内容，不改变排版布局
+              </p>
             </div>
 
             {/* 正文字号选择 */}
