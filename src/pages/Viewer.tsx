@@ -362,30 +362,50 @@ export default function Viewer() {
     };
   }, [pageImages, bookSize]);
 
+
+  // ===== 翻页为什么不用 page-flip 的 turnToNextPage/turnToPrevPage =====
+  // 它的 showNext() 把上界写成了 `currentSpreadIndex < getSpread().length`，
+  // 应该是 `< length - 1`。在最后一个跨页再往前翻，它会先把下标 ++ 到越界值，
+  // 再在 showSpread() 里读 `undefined.length` 抛 TypeError —— 下标就卡在非法值上。
+  // 症状：到了最后一页以后，第一次按「上一页」毫无动静（那一下只是把非法下标
+  // 拉回合法，画面不变），要按第二次才真的退回去。用户的原话是"最后一页收不回来"。
+  // 这是库的内部缺陷，不该去改 node_modules；改用 turnToPage()：它的 show()
+  // 自带 `t < 0 || t >= pages.length` 的边界检查，而且是用 getSpreadIndexByPage
+  // 重新定位跨页，就算下标已经被带偏也能落回正轨。
+  const goPrev = useCallback(() => {
+    const pf = pageFlipRef.current;
+    if (!pf) return;
+    const cur = pf.getCurrentPageIndex();
+    if (cur <= 0) return; // 已经在封面
+    pf.turnToPage(Math.max(0, cur - 2));
+  }, []);
+
+  const goNext = useCallback(() => {
+    const pf = pageFlipRef.current;
+    if (!pf) return;
+    const cur = pf.getCurrentPageIndex();
+    // 封面(0) 后面接着的是第 1 页开头的跨页；其余跨页往后跳两页
+    const next = cur <= 0 ? 1 : cur + 2;
+    if (next >= totalPages) return; // 已经在最后一个跨页
+    pf.turnToPage(next);
+  }, [totalPages]);
+
   // 键盘快捷键
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         e.preventDefault();
-        pageFlipRef.current?.turnToPrevPage();
+        goPrev();
       } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault();
-        pageFlipRef.current?.turnToNextPage();
+        goNext();
       } else if (e.key === 'Escape') {
         navigate(`/editor/${projectId}`);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [projectId, navigate]);
-
-  const goPrev = useCallback(() => {
-    pageFlipRef.current?.turnToPrevPage();
-  }, []);
-
-  const goNext = useCallback(() => {
-    pageFlipRef.current?.turnToNextPage();
-  }, []);
+  }, [projectId, navigate, goPrev, goNext]);
 
   // 导出 PDF
   async function handleExportPDF() {

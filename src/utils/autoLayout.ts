@@ -27,6 +27,12 @@ interface UsedTexts {
 }
 
 /**
+ * 正文一页能放的图片张数 —— 必须和 TEMPLATES_BY_COUNT 的键一致。
+ * 用别的张数（6、7、8、9）会找不到模板、退回单图模板，多出来的照片就被静默丢掉。
+ */
+const VALID_PHOTO_COUNTS = [1, 2, 3, 4, 5, 10];
+
+/**
  * 每个图片数量对应的模板列表
  */
 const TEMPLATES_BY_COUNT: Record<number, string[]> = {
@@ -36,11 +42,11 @@ const TEMPLATES_BY_COUNT: Record<number, string[]> = {
     'text-left-image-right', // 左文右图
   ],
   2: [
+    // 这里以前还列了「左图右文 / 左文右图」，但那两个模板只有 1 个图位，
+    // 2 张图塞进去会有一张被静默丢掉（照片就少了一张）
     'two-images-stack',    // 双图横板
     'two-images-slanted',  // 双图留白
     'dual-portrait',       // 双图竖版
-    'image-left-text-right', // 左图右文
-    'text-left-image-right', // 左文右图
   ],
   3: [
     'three-collage',       // 三图拼贴
@@ -123,42 +129,94 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
   }
 
   // ========== 2. 内容页：交替生成「多张图页」和「单张满版图页」 ==========
-  let isMultiPhotoPage = true; // 第一页是多张图页
-  let multiPhotoCountIndex = 0; // 多图页的数量循环索引：2→3→4→5→2→3...
-  // 至少15张图片才会生成九宫格头像模板（10图）
-  const multiPhotoCounts = imageIds.length >= 15 ? [2, 3, 4, 5, 10] : [2, 3, 4, 5];
+  // 先把图片怎么分组算出来，再逐页生成 —— 正文页数的奇偶要按下面的规则调整，
+  // 分组和生成分开写，改分组时不用去动已经生成好的页面
+  const groups: { imageIds: string[]; isMultiPhotoPage: boolean }[] = [];
+  {
+    let isMultiPhotoPage = true; // 第一页是多张图页
+    let multiPhotoCountIndex = 0; // 多图页的数量循环索引：2→3→4→5→2→3...
+    // 至少15张图片才会生成九宫格头像模板（10图）
+    const multiPhotoCounts = imageIds.length >= 15 ? [2, 3, 4, 5, 10] : [2, 3, 4, 5];
+
+    while (imageIndex < imageIds.length) {
+      let count: number;
+
+      if (isMultiPhotoPage) {
+        // 多图页：按 2→3→4→5 循环选数量，保证每种都有
+        count = multiPhotoCounts[multiPhotoCountIndex % multiPhotoCounts.length];
+        multiPhotoCountIndex++;
+        // 剩下的图片不够就少放几张。张数只能用"有模板的"（1/2/3/4/5/10）：
+        // 比如剩 6 张时放 6 张，找不到 6 图模板会退回单图模板，另外 5 张照片
+        // 就被静默丢掉了。于是这里挑一个不超过剩余张数、且有模板的最大值
+        const remaining = imageIds.length - imageIndex;
+        if (count > remaining) {
+          count = VALID_PHOTO_COUNTS.filter((c) => c <= remaining).pop()!;
+        }
+      } else {
+        // 单张图页：满版图带边框，无文案
+        count = 1;
+      }
+
+      groups.push({
+        imageIds: imageIds.slice(imageIndex, imageIndex + count),
+        isMultiPhotoPage,
+      });
+
+      imageIndex += count;
+      isMultiPhotoPage = !isMultiPhotoPage; // 下一页切换类型
+    }
+  }
+
+  // ---- 正文页数要和封面/结尾页搭成偶数，否则书翻到最后合不上 ----
+  // 排版的节奏是「多图页 + 单图页」两两成对，但图片张数没凑好时最后会落单一个
+  // 多图页（46 张图就是：最后剩一个 5 图页），整本页数变成奇数。
+  // page-flip 的 showCover 布局是 [0], [1,2], [3,4], …，只有总页数是偶数时最后一页
+  // 才单独占一页；奇数时结尾页会跟倒数第二页挤在同一个跨页里，翻到最后收不回来
+  // （用户 2026-10-13 反馈的「相册1111」）。
+  // 拆法：把落单的多图页拆成「少一张的多图页 + 单图页」—— 正好补上缺的那个
+  // 单图页，页数转成偶数，节奏也还是「多图页配单图页」。
+  const fixedPages = (includeCover ? 1 : 0) + (includeEnding ? 1 : 0);
+  const wantEvenGroups = fixedPages % 2 === 0;
+  if ((groups.length % 2 === 0) !== wantEvenGroups) {
+    // 找最后一个能拆的多图页：正文奇数页时它就是最后一页，偶数页时是倒数第二页
+    let at = -1;
+    for (let i = groups.length - 1; i >= 0; i--) {
+      if (groups[i].isMultiPhotoPage && groups[i].imageIds.length >= 2) {
+        at = i;
+        break;
+      }
+    }
+    if (at >= 0) {
+      const group = groups[at];
+      const count = group.imageIds.length;
+      // 拆出来的张数同样得是"有模板的"：10 图页用的是九宫格头像模板，
+      // 拆成 9+1 没有 9 图模板，改拆成两个 5 图页；其余拆成「N-1 张 + 1 张」，
+      // 正好是一页多图配一页满版图
+      const firstCount = count === 10 ? 5 : count - 1;
+      groups.splice(
+        at,
+        1,
+        { imageIds: group.imageIds.slice(0, firstCount), isMultiPhotoPage: true },
+        { imageIds: group.imageIds.slice(firstCount), isMultiPhotoPage: count === 10 }
+      );
+    }
+    // 找不到能拆的（图片太少、多图页都被截断成 1 张了）就保持原样
+  }
+
   let lastTemplateId: string | undefined = undefined; // 上一页用的模板，避免重复
 
-  while (imageIndex < imageIds.length) {
-    let count: number;
-    let templateId: string;
+  for (const group of groups) {
+    const count = group.imageIds.length;
+    // 显式标注类型：不写的话 templateId 和 lastTemplateId 会互相引用，TS 推不出来
+    const templateId: string = group.isMultiPhotoPage
+      ? pickTemplateByImageCount(count, lastTemplateId)
+      : 'full-image-bordered';
 
-    if (isMultiPhotoPage) {
-      // 多图页：按 2→3→4→5 循环选数量，保证每种都有
-      count = multiPhotoCounts[multiPhotoCountIndex % multiPhotoCounts.length];
-      multiPhotoCountIndex++;
-      // 如果剩下的图片不够，就少放几张
-      const remaining = imageIds.length - imageIndex;
-      if (count > remaining) {
-        count = Math.max(1, remaining);
-      }
-      // 根据数量选模板，避免和上一页重复
-      templateId = pickTemplateByImageCount(count, lastTemplateId);
-    } else {
-      // 单张图页：满版图带边框，无文案
-      count = 1;
-      templateId = 'full-image-bordered';
-    }
-
-    // 这一页的图片ID
-    const pageImageIds = imageIds.slice(imageIndex, imageIndex + count);
-
-    // 应用模板
     const template = TEMPLATES.find((t) => t.id === templateId)!;
-    const elements = applyTemplate(template, format, pageImageIds, themeId, bodyFontSize);
+    const elements = applyTemplate(template, format, group.imageIds, themeId, bodyFontSize);
 
     // 填充文案（单张满版图页不填文案）
-    if (isMultiPhotoPage) {
+    if (group.isMultiPhotoPage) {
       fillTextElements(elements, theme, used, format);
     }
 
@@ -171,9 +229,6 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
 
     // 记录这一页用的模板，下一页避免重复
     lastTemplateId = templateId;
-
-    imageIndex += count;
-    isMultiPhotoPage = !isMultiPhotoPage; // 下一页切换类型
   }
 
   // ========== 3. 结尾页 ==========
