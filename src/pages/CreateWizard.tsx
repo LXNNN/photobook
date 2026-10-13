@@ -24,6 +24,7 @@ export default function CreateWizard() {
   const [step, setStep] = useState<Step>('upload');
   const [images, setImages] = useState<{ file: File; preview: string }[]>([]);
   const [projectName, setProjectName] = useState('');
+  const [nameError, setNameError] = useState('');
   const [selectedTheme, setSelectedTheme] = useState(THEMES[0].id);
   const [bodyFontSize, setBodyFontSize] = useState(12);
   const [includeCover, setIncludeCover] = useState(true);
@@ -83,6 +84,10 @@ export default function CreateWizard() {
   // ========== 生成相册 ==========
   const handleGenerate = async () => {
     if (images.length === 0) return;
+    if (!projectName.trim()) {
+      setNameError('请输入相册名称');
+      return;
+    }
     setStep('generating');
     setProgress(0);
 
@@ -97,7 +102,7 @@ export default function CreateWizard() {
 
       // 2. 自动排版生成项目（先有相册，照片才知道该写进哪个文件夹）
       const project = autoGenerateAlbum({
-        projectName: projectName || '我的相册',
+        projectName: projectName.trim(),
         themeId: selectedTheme,
         imageIds: imageAssets.map((a) => a.id),
         format: PRESET_FORMATS.A5,
@@ -275,14 +280,26 @@ export default function CreateWizard() {
 
             {/* 相册名称 */}
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">相册名称</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                相册名称 <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
+                onChange={(e) => {
+                  setProjectName(e.target.value);
+                  if (nameError) setNameError('');
+                }}
                 placeholder="给相册起个名字吧..."
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-600 text-sm"
+                className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none text-sm ${
+                  nameError
+                    ? 'border-red-400 focus:border-red-500'
+                    : 'border-gray-300 focus:border-amber-600'
+                }`}
               />
+              {nameError && (
+                <p className="text-xs text-red-500 mt-1.5">{nameError}</p>
+              )}
             </div>
 
             {/* 主题选择 */}
