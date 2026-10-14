@@ -581,7 +581,7 @@ export default function ProjectList() {
         </h2>
 
         {/* 正文介绍 */}
-        <p className="text-xs sm:text-sm text-gray-700 leading-relaxed mb-3 sm:mb-6">
+        <p className="text-xs sm:text-sm text-gray-700 leading-relaxed mb-3 sm:mb-6" style={{ fontFamily: '"FangSong", "STFangsong", "仿宋", serif' }}>
           把照片做成一本书，记录你走过的路，遇见的树，和某一瞬间的小感悟。
         </p>
 
