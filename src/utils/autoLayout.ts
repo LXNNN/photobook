@@ -38,6 +38,7 @@ const VALID_PHOTO_COUNTS = [1, 2, 3, 4, 5, 10];
 const TEMPLATES_BY_COUNT: Record<number, string[]> = {
   1: [
     'image-top-text-bottom', // 上图下文
+    'text-top-image-bottom', // 上文下图
     'image-left-text-right', // 左图右文
     'text-left-image-right', // 左文右图
   ],
@@ -51,12 +52,15 @@ const TEMPLATES_BY_COUNT: Record<number, string[]> = {
   3: [
     'three-collage',       // 三图拼贴
     'three-collage-v2',    // 三图错落
+    'three-top-bottom',    // 三图上下排版
+    'three-stairs',        // 三图阶梯
   ],
   4: [
     'four-grid',           // 四宫格
     'four-magazine',       // 四图杂志风
     'four-left3-right1',   // 四图三小一大
     'four-grid-whitespace', // 四图留白
+    'four-literary',       // 四图文艺排版
   ],
   5: [
     'five-collage',        // 五图拼贴

@@ -186,6 +186,50 @@ export class InteractionManager {
       verticalGuides.push(bestGuideX);
     }
 
+    // 检测左右间距相等（当前元素与左右元素的间距相等时吸附）
+    if (bestGuideX === null) {
+      // 找左边最近的元素（右边缘 < 当前左边缘）
+      let leftNeighbor: Element | null = null;
+      let leftMaxRight = -Infinity;
+      // 找右边最近的元素（左边缘 > 当前右边缘）
+      let rightNeighbor: Element | null = null;
+      let rightMinLeft = Infinity;
+
+      for (const other of otherElements) {
+        const otherRight = other.x + other.width;
+        const otherLeft = other.x;
+        // 左边元素：右边缘在当前左边缘左边，且y方向有重叠
+        if (otherRight < elLeft && other.y < elBottom && other.y + other.height > elTop) {
+          if (otherRight > leftMaxRight) {
+            leftMaxRight = otherRight;
+            leftNeighbor = other;
+          }
+        }
+        // 右边元素：左边缘在当前右边缘右边，且y方向有重叠
+        if (otherLeft > elRight && other.y < elBottom && other.y + other.height > elTop) {
+          if (otherLeft < rightMinLeft) {
+            rightMinLeft = otherLeft;
+            rightNeighbor = other;
+          }
+        }
+      }
+
+      // 如果左右都有邻居，计算使间距相等的理想位置
+      if (leftNeighbor && rightNeighbor) {
+        const leftRight = leftNeighbor.x + leftNeighbor.width;
+        const rightLeft = rightNeighbor.x;
+        // 理想中心位置 = (左邻居右边缘 + 右邻居左边缘) / 2
+        const idealCenter = (leftRight + rightLeft) / 2;
+        const idealLeft = idealCenter - el.width / 2;
+        const dist = Math.abs(elLeft - idealLeft);
+        if (dist < tolerance) {
+          snappedX = idealLeft;
+          // 在当前元素中心位置显示垂直辅助线
+          verticalGuides.push(idealCenter);
+        }
+      }
+    }
+
     // 检测水平对齐（横线）
     let minDistY = tolerance;
     let bestGuideY: number | null = null;

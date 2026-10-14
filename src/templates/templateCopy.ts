@@ -181,13 +181,17 @@ export const NINE_GRID_AVATAR_TEXTS = [
 // ============ 模板文案映射表 ============
 export const TEMPLATE_COPY_MAP: Record<string, any[]> = {
   'image-top-text-bottom': IMAGE_TOP_TEXT_BOTTOM_TEXTS,
+  'text-top-image-bottom': IMAGE_TOP_TEXT_BOTTOM_TEXTS,
   'image-left-text-right': IMAGE_LEFT_TEXT_RIGHT_TEXTS,
   'text-left-image-right': IMAGE_LEFT_TEXT_RIGHT_TEXTS,
   'dual-portrait': DUAL_PORTRAIT_TEXTS,
   'three-collage': THREE_COLLAGE_TEXTS,
   'three-collage-v2': THREE_OFFSET_TEXTS,
+  'three-top-bottom': THREE_COLLAGE_TEXTS,
+  'three-stairs': THREE_OFFSET_TEXTS,
   'two-images-slanted': THREE_OFFSET_TEXTS,
   'four-left3-right1': THREE_COLLAGE_TEXTS,
+  'four-literary': THREE_COLLAGE_TEXTS,
   'four-grid-whitespace': FOUR_GRID_WHITESPACE_TEXTS,
   'five-collage': FIVE_COLLAGE_TEXTS,
   'nine-grid-avatar': NINE_GRID_AVATAR_TEXTS,

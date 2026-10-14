@@ -170,6 +170,18 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'text', x: 0.1, y: 0.73, width: 0.8, height: 0.2, placeholder: '在这里写下你的故事和感受...', fontSizeRatio: 0.032, textAlign: 'left', color: '#666666' },
     ],
   },
+  {
+    id: 'text-top-image-bottom',
+    name: '上文下图',
+    category: '图文混排',
+    description: '上方文字区域，下方大图，适合开篇寄语或章节页',
+    thumbnail: 'text-top-image-bottom',
+    elements: [
+      { type: 'text', x: 0.1, y: 0.136, width: 0.8, height: 0.08, placeholder: '标题', fontSizeRatio: 0.055, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      { type: 'text', x: 0.1, y: 0.241, width: 0.8, height: 0.2, placeholder: '在这里写下你的故事和感受...', fontSizeRatio: 0.032, textAlign: 'left', color: '#666666' },
+      { type: 'image', x: 0.06, y: 0.40, width: 0.88, height: 0.55, cropHint: 'cover' },
+    ],
+  },
   // ============ 图文混排 ============
   {
     id: 'image-left-text-right',
@@ -260,13 +272,74 @@ export const TEMPLATES: TemplateDefinition[] = [
     ],
   },
   {
+    id: 'three-top-bottom',
+    name: '三图上下排版',
+    category: '多图拼贴',
+    description: '上方横版大图+下方两张竖版小图，底部配标题和正文，适合家庭回忆照',
+    thumbnail: 'three-top-bottom',
+    elements: [
+      // 上方横版大图
+      { type: 'image', x: 0.1, y: 0.05, width: 0.8, height: 0.314, cropHint: 'cover' },
+      // 下方左图
+      { type: 'image', x: 0.1, y: 0.38, width: 0.389, height: 0.3, cropHint: 'cover' },
+      // 下方右图
+      { type: 'image', x: 0.512, y: 0.38, width: 0.389, height: 0.3, cropHint: 'cover' },
+      // 右下角标题
+      { type: 'text', x: 0.52, y: 0.724, width: 0.38, height: 0.05, placeholder: '人间值得', fontSizeRatio: 0.045, textAlign: 'right', fontWeight: 'bold', color: '#2c2c2c' },
+      // 左下角正文
+      { type: 'text', x: 0.1, y: 0.749, width: 0.5, height: 0.18, placeholder: '这一天，在姥姥家里，那真是一段快乐的时光。姐姐从学校借回来的相机，三个人分别和姥姥、老爷合照，现在想起来还是会笑出声……', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+    ],
+  },
+  {
+    id: 'three-stairs',
+    name: '三图阶梯',
+    category: '多图拼贴',
+    description: '三张竖版照片从左下到右上阶梯错落排列，左上角配标题和短句文案',
+    thumbnail: 'three-stairs',
+    elements: [
+      // 标题
+      { type: 'text', x: 0.093, y: 0.139, width: 0.5, height: 0.06, placeholder: '时光印记', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      // 文案（两行短句）
+      { type: 'text', x: 0.093, y: 0.199, width: 0.5, height: 0.1, placeholder: '双击编辑文字\n双击编辑文字', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666', lineHeight: 1.5 },
+      // 左下方第一张
+      { type: 'image', x: 0.059, y: 0.452, width: 0.284, height: 0.429, cropHint: 'cover' },
+      // 中间第二张
+      { type: 'image', x: 0.362, y: 0.321, width: 0.284, height: 0.429, cropHint: 'cover' },
+      // 右上方第三张
+      { type: 'image', x: 0.666, y: 0.183, width: 0.284, height: 0.429, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'four-literary',
+    name: '四图文艺排版',
+    category: '多图拼贴',
+    description: '四张图错落排列+底部标题正文，文艺杂志风，适合旅行感悟',
+    thumbnail: 'four-literary',
+    elements: [
+      // 左上（大图）
+      { type: 'image', x: 0.0797, y: 0.084, width: 0.498, height: 0.245, cropHint: 'cover' },
+      // 右上（小图）
+      { type: 'image', x: 0.6, y: 0.084, width: 0.324, height: 0.245, cropHint: 'cover' },
+      // 左下（小图）
+      { type: 'image', x: 0.0797, y: 0.346, width: 0.324, height: 0.245, cropHint: 'cover' },
+      // 右下（大图）
+      { type: 'image', x: 0.426, y: 0.346, width: 0.498, height: 0.245, cropHint: 'cover' },
+      // 标题
+      { type: 'text', x: 0.1, y: 0.678, width: 0.8, height: 0.05, placeholder: '标题', fontSizeRatio: 0.045, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      // 正文
+      { type: 'text', x: 0.1, y: 0.744, width: 0.8, height: 0.15, placeholder: '在这里写下你的故事和感受...', fontSizeRatio: 0.029, textAlign: 'left', color: '#666666' },
+      // 三个点装饰
+      { type: 'text', x: 0.4, y: 0.90, width: 0.2, height: 0.02, placeholder: '● ● ●', fontSizeRatio: 0.02, textAlign: 'center', color: '#333333', lineHeight: 1, fixed: true },
+    ],
+  },
+  {
     id: 'four-grid',
     name: '四图网格',
     category: '多图拼贴',
     description: '2x2 均匀网格，适合展示系列照片',
     thumbnail: 'four-grid',
     elements: [
-      { type: 'image', x: 0.0554, y: 0.0657, width: 0.43, height: 0.43, cropHint: 'cover' },
+      { type: 'image', x: 0.0588, y: 0.0657, width: 0.43, height: 0.43, cropHint: 'cover' },
       { type: 'image', x: 0.5135, y: 0.0657, width: 0.43, height: 0.43, cropHint: 'cover' },
       { type: 'image', x: 0.0588, y: 0.5152, width: 0.43, height: 0.43, cropHint: 'cover' },
       { type: 'image', x: 0.5135, y: 0.5176, width: 0.43, height: 0.43, cropHint: 'cover' },
