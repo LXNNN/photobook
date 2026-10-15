@@ -65,26 +65,6 @@ export interface TemplateElement {
 export const TEMPLATES: TemplateDefinition[] = [
   // ============ 封面/尾页 ============
   {
-    id: 'cover-magazine',
-    name: '杂志封面',
-    category: '封面尾页',
-    description: '全幅大图+大标题+英文副标题，杂志风格封面',
-    thumbnail: 'cover-magazine',
-    elements: [
-      { type: 'image', x: 0, y: 0, width: 1, height: 1, cropHint: 'cover' },
-      // 顶部英文小字
-      { type: 'text', x: 0.1, y: 0.12, width: 0.8, height: 0.05, placeholder: 'TRAVEL DIARY', fontSizeRatio: 0.035, textAlign: 'center', color: '#ffffff' },
-      // 中间大标题
-      { type: 'text', x: 0.1, y: 0.28, width: 0.8, height: 0.12, placeholder: '在路上', fontSizeRatio: 0.09, textAlign: 'center', fontWeight: 'bold', color: '#ffffff' },
-      // 边框副标题
-      { type: 'text', x: 0.25, y: 0.42, width: 0.5, height: 0.05, placeholder: 'ADVENTURE AWAITS', fontSizeRatio: 0.028, textAlign: 'center', color: '#ffffff' },
-      // 作者名
-      { type: 'text', x: 0.1, y: 0.5, width: 0.8, height: 0.04, placeholder: '记录者', fontSizeRatio: 0.03, textAlign: 'center', color: '#ffffff' },
-      // 底部年份
-      { type: 'text', x: 0.1, y: 0.82, width: 0.8, height: 0.08, placeholder: '2026', fontSizeRatio: 0.06, textAlign: 'center', fontWeight: 'bold', color: '#ffffff' },
-    ],
-  },
-  {
     id: 'cover-minimal',
     name: '极简封面',
     category: '封面尾页',
@@ -99,7 +79,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   },
   {
     id: 'cover-travel-journal',
-    name: '旅行杂志封面',
+    name: '杂志封面',
     category: '封面尾页',
     description: '白底大标题 + 满幅大图，左侧四角星与竖排 TIME 装饰，极简杂志风',
     thumbnail: 'cover-travel-journal',
@@ -140,6 +120,21 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'text', x: 0.15, y: 0.3, width: 0.7, height: 0.1, placeholder: '未完待续', fontSizeRatio: 0.07, textAlign: 'center', fontWeight: 'bold', color: '#ffffff' },
       { type: 'text', x: 0.2, y: 0.45, width: 0.6, height: 0.15, placeholder: '每一段旅程都是一次成长，期待下一次出发。', fontSizeRatio: 0.03, textAlign: 'center', color: '#ffffff' },
       { type: 'text', x: 0.15, y: 0.7, width: 0.7, height: 0.05, placeholder: 'THANK YOU', fontSizeRatio: 0.025, textAlign: 'center', color: '#ffffff' },
+    ],
+  },
+  {
+    id: 'ending-minimal',
+    name: '页尾（未完待续）',
+    category: '封面尾页',
+    description: '居中方形照片+未完待续+年份，简约文艺尾页',
+    thumbnail: 'ending-minimal',
+    elements: [
+      // 居中方形照片
+      { type: 'image', x: 0.309, y: 0.206, width: 0.378, height: 0.252, cropHint: 'cover' },
+      // 未完待续
+      { type: 'text', x: 0.199, y: 0.505, width: 0.602, height: 0.05, placeholder: '未完待续', fontSizeRatio: 0.033, textAlign: 'center', fontWeight: 'bold', color: '#333333' },
+      // 年份（动态获取当前年份）
+      { type: 'text', x: 0.199, y: 0.547, width: 0.602, height: 0.04, placeholder: '{year}', fontSizeRatio: 0.031, textAlign: 'center', fontWeight: 'normal', color: '#333333' },
     ],
   },
 
@@ -619,6 +614,11 @@ export function applyTemplate(
       } else {
         // 装饰小字：原样保留
         content = tplEl.placeholder || '';
+      }
+
+      // 替换动态年份占位符
+      if (content.includes('{year}')) {
+        content = content.replace('{year}', String(new Date().getFullYear()));
       }
 
       elements.push({

@@ -301,7 +301,7 @@ function createCoverPage(
     id: generateId(),
     background: { type: 'color', value: '#ffffff' },
     elements,
-    templateId: 'cover-magazine',
+    templateId: 'cover-travel-journal',
   };
 }
 
