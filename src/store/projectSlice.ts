@@ -1,6 +1,7 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { Project, Page, Element, BookFormat, ImageElement } from '@/types';
 import { PRESET_FORMATS } from '@/types';
+import { isBodyText } from '@/utils/bodyText';
 
 interface ProjectState {
   current: Project | null;
@@ -128,6 +129,31 @@ export const projectSlice = createSlice({
       state.current.pages[action.payload.pageIndex].elements.push(action.payload.element);
       state.current.updatedAt = Date.now();
     },
+    /**
+     * 一键换全书正文的颜色 + 字号（「🎨 正文样式」弹窗）。
+     * 判定「正文」用 isBodyText：文字、不是 fixed 装饰小字、字号没到标题线 ——
+     * 标题和装饰小字一律不碰。
+     *
+     * 同时把这一套记成相册自己的正文样式（bodyColor / bodyFontSize）：之后点
+     * 「📝 添加文字」新建的文字直接用这套，不用再手动调。字号本来就有 bodyFontSize
+     * 这个字段（模板填充正文时也用它），颜色是这次一起加的。
+     *
+     * 注意：调用方要自己先 pushHistory()（跟其它改动操作一个规矩），这样 Ctrl+Z 能退回来。
+     */
+    setBodyStyle(state, action: PayloadAction<{ color: string; fontSize: number }>) {
+      if (!state.current) return;
+      const { color, fontSize } = action.payload;
+      state.current.bodyColor = color;
+      state.current.bodyFontSize = fontSize;
+      for (const page of state.current.pages) {
+        for (const el of page.elements) {
+          if (!isBodyText(el, state.current.format)) continue;
+          el.color = color;
+          el.fontSize = fontSize;
+        }
+      }
+      state.current.updatedAt = Date.now();
+    },
     updateElement(state, action: PayloadAction<{ pageIndex: number; elementId: string; updates: Partial<Element> }>) {
       if (!state.current) return;
       const page = state.current.pages[action.payload.pageIndex];
@@ -198,6 +224,7 @@ export const {
   setPageTemplateId,
   addElement,
   updateElement,
+  setBodyStyle,
   deleteElement,
   swapImages,
   bringElementForward,

@@ -11,8 +11,10 @@ export interface Project {
   version: number;
   /** 主题ID（旅行/生日/情侣等），用于切换模板时取对应文案 */
   themeId?: string;
-  /** 正文字号（pt），默认12，可选14，用于所有模板正文和新添加文字 */
+  /** 正文字号（pt），默认 13（DEFAULT_BODY_FONT_SIZE），用于所有模板正文和新添加文字 */
   bodyFontSize?: number;
+  /** 正文颜色（「🎨 正文样式」改过之后记下来），默认 #333333（DEFAULT_BODY_COLOR） */
+  bodyColor?: string;
 }
 
 export interface BookFormat {
@@ -96,6 +98,19 @@ export interface TextElement extends BaseElement {
   letterSpacing: number;
   /** 是否为固定文字（不自动填充文案，比如装饰小标签） */
   fixed?: boolean;
+  /**
+   * 正文标记：模板里那段会被填文案、跟着「正文样式」走的正文。
+   * true = 正文；false = 明确不是（标题、装饰小字、照片上的白字）；
+   * 不填 = 老相册的数据，按字号是否到标题线来判断（见 utils/bodyText.ts）。
+   */
+  body?: boolean;
+  /**
+   * 标题标记：「📝 添加文字 → 添加标题」做出来的那段标题。
+   * true = 标题；false = 明确不是标题（手动写的正文）；不填 = 模板做的或
+   * 老相册的数据，按字号是否到标题线判断（见 utils/bodyText.ts 的 isTitleText）。
+   * 之后做「全局调标题样式」就认这个标记。
+   */
+  title?: boolean;
 }
 
 export interface StickerElement extends BaseElement {

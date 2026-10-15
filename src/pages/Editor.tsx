@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch, store } from '@/store';
-import { setCurrentProject, addElement, updateElement, deleteElement, addPage, deletePage, updateProjectName, reorderPages, swapImages, pushHistory, undo } from '@/store/projectSlice';
+import { setCurrentProject, addElement, updateElement, deleteElement, addPage, deletePage, updateProjectName, reorderPages, swapImages, pushHistory, undo, setBodyStyle } from '@/store/projectSlice';
 import { selectElement, clearSelection, setZoom, setPan, resetZoom, resetEditor, setCurrentPage as setCurrentPageAction } from '@/store/editorSlice';
 import { setMode } from '@/store/uiSlice';
 import { getProject } from '@/utils/storage';
@@ -17,6 +17,14 @@ import PageThumbnail from '@/components/editor/PageThumbnail';
 import PropertyPanel from '@/components/editor/PropertyPanel';
 import TemplatePanel from '@/components/editor/TemplatePanel';
 import ImageCropper from '@/components/editor/ImageCropper';
+import BodyStyleDialog from '@/components/editor/BodyStyleDialog';
+import {
+  DEFAULT_BODY_COLOR,
+  DEFAULT_BODY_FONT_SIZE,
+  DEFAULT_TITLE_COLOR,
+  DEFAULT_TITLE_FONT_SIZE,
+  SHOW_BODY_STYLE_ENTRY,
+} from '@/utils/bodyText';
 
 // 启动守卫在 StrictMode 下会跑两遍，提示只弹一次
 let folderGuardAlerted = false;
@@ -41,6 +49,8 @@ export default function Editor() {
   const projectInitializedRef = useRef(false); // 记录项目是否已初始化过
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
+  const [bodyStyleOpen, setBodyStyleOpen] = useState(false); // 「🎨 正文样式」弹窗
+  const [addTextOpen, setAddTextOpen] = useState(false); // 「📝 添加文字」的小菜单
   const [leftTab, setLeftTab] = useState<'pages' | 'templates'>('pages');
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -352,10 +362,12 @@ export default function Editor() {
     e.target.value = '';
   };
 
-  // 添加文字
-  const handleAddText = () => {
+  // 添加文字：标题和正文分开加。加的时候就把身份标上（title / body），
+  // 之后「🎨 正文样式」和「全局改标题样式」才知道该不该管这段字。
+  const handleAddText = (kind: 'title' | 'body') => {
     if (!project) return;
     const page = project.pages[currentPageIndex];
+    const isTitle = kind === 'title';
     const newElement: TextElement = {
       id: generateId(),
       type: 'text',
@@ -366,16 +378,34 @@ export default function Editor() {
       rotation: 0,
       opacity: 1,
       zIndex: page.elements.length,
-      content: '双击编辑文字',
-      fontSize: project.bodyFontSize || 12,
+      content: isTitle ? '双击编辑标题' : '双击编辑文字',
+      fontSize: isTitle ? DEFAULT_TITLE_FONT_SIZE : project.bodyFontSize || DEFAULT_BODY_FONT_SIZE,
       fontFamily: 'sans-serif',
-      color: '#333333',
+      // 标题默认加粗；正文不设（跟着默认的常规走）
+      fontWeight: isTitle ? 'bold' : undefined,
+      // 正文跟着相册的正文样式走（「🎨 正文样式」里改过就用改过的）；
+      // 标题目前用固定的一套（25pt / 深灰），跟模板里的标题一致
+      color: isTitle ? DEFAULT_TITLE_COLOR : project.bodyColor || DEFAULT_BODY_COLOR,
       textAlign: 'left',
       lineHeight: 1.5,
       letterSpacing: 0,
+      // 两个标记都写死：这样之后在右侧面板里把字号调大调小，它的身份也不会跟着变
+      title: isTitle,
+      body: !isTitle,
     };
+    // 压历史：跟其它改动操作一个规矩（删元素、加页、套模板都压），
+    // 不然加了字按 Ctrl+Z 撤的是上一步别的操作，这行字还赖着不走
+    dispatch(pushHistory());
     dispatch(addElement({ pageIndex: currentPageIndex, element: newElement }));
     dispatch(selectElement(newElement.id));
+  };
+
+  // 一键换全书正文的颜色/字号：先压历史（Ctrl+Z 能退回来），再改。
+  // 判定和落地都在 setBodyStyle 里，这边只管把选好的值递进去。
+  const handleApplyBodyStyle = (color: string, fontSize: number) => {
+    dispatch(pushHistory());
+    dispatch(setBodyStyle({ color, fontSize }));
+    setBodyStyleOpen(false);
   };
 
   // 删除选中元素
@@ -391,6 +421,12 @@ export default function Editor() {
   // 键盘快捷键
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // 正文样式弹窗开着时，快捷键一律让路 —— 不然按一下 Backspace 就把弹窗
+      // 背后选中的那个元素删了
+      if (bodyStyleOpen) {
+        if (e.key === 'Escape') setBodyStyleOpen(false);
+        return;
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
         const target = e.target as HTMLElement;
         if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
@@ -422,7 +458,7 @@ export default function Editor() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedIds, zoom, dispatch, handleSave]);
+  }, [selectedIds, zoom, dispatch, handleSave, bodyStyleOpen]);
 
   // 切换到浏览模式
   const handleViewMode = async () => {
@@ -464,7 +500,9 @@ export default function Editor() {
   return (
     <div className="w-full h-full flex flex-col bg-[#e8e4de]">
       {/* 顶部工具栏 */}
-      <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 shadow-sm z-10">
+      {/* z-30：要盖住下面的文件夹提示条（那条也是 z-10，且在 DOM 里排在后面），
+          不然「📝 添加文字」的下拉菜单会被提示条压住一截 */}
+      <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 shadow-sm z-30">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/')} className="text-gray-500 hover:text-gray-700 text-sm">
             ← 返回
@@ -487,9 +525,52 @@ export default function Editor() {
           <button onClick={() => fileInputRef.current?.click()} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">
             📷 上传图片
           </button>
-          <button onClick={handleAddText} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">
-            📝 添加文字
-          </button>
+          {/* 📝 添加文字：下拉里选标题还是正文。加出来就带身份标记 */}
+          <div className="relative">
+            <button
+              onClick={() => setAddTextOpen((v) => !v)}
+              title="添加标题或正文"
+              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            >
+              📝 添加文字 ▾
+            </button>
+            {addTextOpen && (
+              <>
+                {/* 点别处就把菜单收起来（满屏的透明层接住点击，不改别处的行为） */}
+                <div className="fixed inset-0 z-10" onClick={() => setAddTextOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 z-20 w-32 py-1 bg-white border border-gray-200 rounded-lg shadow-lg">
+                  <button
+                    onClick={() => {
+                      handleAddText('title');
+                      setAddTextOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-amber-50 transition-colors"
+                  >
+                    添加标题
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleAddText('body');
+                      setAddTextOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-amber-50 transition-colors"
+                  >
+                    添加正文
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          {/* 「🎨 正文样式」入口：这个版本先不上，开关在 utils/bodyText.ts 里 */}
+          {SHOW_BODY_STYLE_ENTRY && (
+            <button
+              onClick={() => setBodyStyleOpen(true)}
+              title="一键换全书正文的颜色和字号"
+              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            >
+              🎨 正文样式
+            </button>
+          )}
           <div className="w-px h-6 bg-gray-200 mx-1" />
           <button onClick={() => dispatch(setZoom(zoom / 1.2))} className="w-8 h-8 text-gray-600 hover:bg-gray-100 rounded">-</button>
           <span className="text-xs text-gray-500 w-12 text-center">{Math.round(zoom * 100)}%</span>
@@ -691,6 +772,15 @@ export default function Editor() {
 
       {/* 隐藏的文件上传 */}
       <input ref={fileInputRef} type="file" accept="image/*,.heic,.heif" multiple onChange={handleImageUpload} className="hidden" />
+
+      {/* 正文样式弹窗（一键换全书正文的颜色/字号） */}
+      {bodyStyleOpen && project && (
+        <BodyStyleDialog
+          project={project}
+          onApply={handleApplyBodyStyle}
+          onClose={() => setBodyStyleOpen(false)}
+        />
+      )}
 
       {/* 图片裁剪对话框（URL 有了才开，也就是"确实有照片"才开） */}
       {cropping?.url && (() => {

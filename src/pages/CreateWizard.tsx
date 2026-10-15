@@ -45,7 +45,6 @@ export default function CreateWizard() {
   const [projectName, setProjectName] = useState('');
   const [nameError, setNameError] = useState('');
   const [selectedTheme, setSelectedTheme] = useState(THEMES[0].id);
-  const [bodyFontSize, setBodyFontSize] = useState(12);
   const [includeCover, setIncludeCover] = useState(true);
   const [includeEnding, setIncludeEnding] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -169,7 +168,8 @@ export default function CreateWizard() {
         imageIds: imageAssets.map((a) => a.id),
         format: PRESET_FORMATS.A5,
         maxImagesPerPage: 5,
-        bodyFontSize,
+        // 正文字号不在这里选了，统一用默认的 13pt（DEFAULT_BODY_FONT_SIZE）；
+        // 想改的话是生成之后在编辑页「🎨 正文样式」里改
         includeCover,
         includeEnding,
       });
@@ -399,29 +399,6 @@ export default function CreateWizard() {
               </div>
               <p className="text-xs text-gray-400 mt-2">
                 主题仅影响文案内容，不改变排版布局
-              </p>
-            </div>
-
-            {/* 正文字号选择 */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">正文字号</label>
-              <div className="flex gap-2">
-                {[12, 14].map((size) => (
-                  <button
-                    key={size}
-                    onClick={() => setBodyFontSize(size)}
-                    className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
-                      bodyFontSize === size
-                        ? 'border-amber-500 bg-amber-50 text-amber-700'
-                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                    }`}
-                  >
-                    {size}pt {size === 14 ? '（大字体）' : '（常规）'}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-gray-400 mt-2">
-                12pt为常规书籍正文字号，14pt字体更大，阅读更轻松
               </p>
             </div>
 

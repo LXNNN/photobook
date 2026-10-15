@@ -2,6 +2,7 @@ import type { Project, Page, BookFormat, Element, ImageElement, TextElement } fr
 import { TEMPLATES, applyTemplate } from '@/templates';
 import { THEMES, randomPick, getThemeById, type Theme } from '@/templates/themes';
 import { generateId } from '@/utils/units';
+import { DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
 
 export interface AutoLayoutOptions {
   projectName: string;
@@ -10,7 +11,7 @@ export interface AutoLayoutOptions {
   format: BookFormat;
   /** 每页最多几张图（1-4） */
   maxImagesPerPage: number;
-  /** 正文字号（pt），默认12，可选14 */
+  /** 正文字号（pt），默认 13（DEFAULT_BODY_FONT_SIZE） */
   bodyFontSize?: number;
   /** 是否生成封面页 */
   includeCover: boolean;
@@ -118,7 +119,7 @@ function getUniqueParagraph(theme: Theme, used: UsedTexts): string {
  * 自动生成电子相册
  */
 export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
-  const { projectName, themeId, imageIds, format, maxImagesPerPage, bodyFontSize = 12, includeCover, includeEnding } = options;
+  const { projectName, themeId, imageIds, format, maxImagesPerPage, bodyFontSize = DEFAULT_BODY_FONT_SIZE, includeCover, includeEnding } = options;
   const theme = getThemeById(themeId) || THEMES[0];
   const used: UsedTexts = { pageTitles: new Set(), paragraphs: new Set() };
 
@@ -354,13 +355,12 @@ function fillTextElements(
     if ((el as any).fixed) continue;
     const textEl = el as TextElement;
 
-    // 根据字号判断是标题还是正文
-    const isTitle = textEl.fontSize > format.width * 0.04 * 2.83;
-
-    if (isTitle) {
-      textEl.content = getUniquePageTitle(theme, used);
-    } else {
+    // 正文标记优先：标了的填正文；没标的按字号是否到标题线判标题；
+    // 都不是的（装饰小字、短标签）不动
+    if (textEl.body) {
       textEl.content = getUniqueParagraph(theme, used);
+    } else if (textEl.fontSize > format.width * 0.04 * 2.83) {
+      textEl.content = getUniquePageTitle(theme, used);
     }
   }
 }

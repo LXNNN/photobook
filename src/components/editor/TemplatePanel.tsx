@@ -10,6 +10,7 @@ import {
 import { deleteTemplateFromLibrary } from '@/utils/templateLibrary';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { replacePageElements, addPage, pushHistory } from '@/store/projectSlice';
+import { DEFAULT_BODY_COLOR, DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
 import { clearSelection, setCurrentPage } from '@/store/editorSlice';
 import type { BookFormat, Element } from '@/types';
 
@@ -55,14 +56,28 @@ export default function TemplatePanel({ format, onApplied }: Props) {
     const extraImages = allImageIds.slice(neededSlots);
 
     // 应用模板到当前页（记录模板 ID，支持"保存模板"回写）
-    const elements = applyTemplate(template, format, currentPageImages, project.themeId, project.bodyFontSize || 12);
+    const elements = applyTemplate(
+      template,
+      format,
+      currentPageImages,
+      project.themeId,
+      project.bodyFontSize || DEFAULT_BODY_FONT_SIZE,
+      project.bodyColor || DEFAULT_BODY_COLOR
+    );
     dispatch(replacePageElements({ pageIndex: currentPageIndex, elements, templateId: template.id }));
 
     // 如果有多出来的图片，在当前页后面插入新页
     if (extraImages.length > 0) {
       // 用多图模板放多余图片
       const extraTemplate = TEMPLATES.find((t) => t.id === 'two-images-stack')!;
-      const extraElements = applyTemplate(extraTemplate, format, extraImages, project.themeId, project.bodyFontSize || 12);
+      const extraElements = applyTemplate(
+        extraTemplate,
+        format,
+        extraImages,
+        project.themeId,
+        project.bodyFontSize || DEFAULT_BODY_FONT_SIZE,
+        project.bodyColor || DEFAULT_BODY_COLOR
+      );
       dispatch(addPage({ afterIndex: currentPageIndex, elements: extraElements }));
     }
 

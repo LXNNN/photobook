@@ -19,7 +19,6 @@ export const FONT_WEIGHTS: { label: string; value: FontWeight }[] = [
   { label: '细', value: 300 },
   { label: '常规', value: 'normal' },
   { label: '中粗', value: 500 },
-  { label: '半粗', value: 600 },
   { label: '加粗', value: 'bold' },
   { label: '特粗', value: 900 },
 ];

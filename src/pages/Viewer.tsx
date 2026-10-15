@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch } from '@/store';
 import { setCurrentProject } from '@/store/projectSlice';
+import SpreadZoom from '@/components/viewer/SpreadZoom';
 import { getProject } from '@/utils/storage';
 import { getImageAsset } from '@/utils/assetStore';
 import { ensureFolderReady } from '@/utils/folderLibrary';
@@ -55,6 +56,14 @@ export default function Viewer() {
   const [flipToClosed, setFlipToClosed] = useState(false); // 这趟翻页的落点是"只有一页"的合起态
   const [entered, setEntered] = useState(false); // 入场动画完成
   const [exporting, setExporting] = useState(false); // 导出中
+  const [magnified, setMagnified] = useState(false); // 放大镜开着
+  // 当前页码的镜像。书是按 bookSize 重建的（放大 / 退出放大 / 窗口尺寸变了都会
+  // 重建一次），重建后要翻回原来那一页 —— 但那个 effect 绝不能把 currentPage
+  // 写进依赖里，它一跑就会把正在看的书拆了重做
+  const currentPageRef = useRef(0);
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
 
   // 启动时已启用文件夹模式但还没连上：不进入预览（§5.3），先回书架重连
   useEffect(() => {
@@ -164,8 +173,11 @@ export default function Viewer() {
   // 计算书页尺寸
   useEffect(() => {
     const calcSize = () => {
-      const maxW = Math.min(window.innerWidth - 200, 900);
-      const maxH = window.innerHeight - 160;
+      // 放大镜里书要铺满整个窗口（上下各留 72px 给关闭键和提示条，左右各留 64px）；
+      // 平时预览则把整本书夹在 900px 内 —— 屏幕上看到多大就等于印出来多大，
+      // 书本身该多大还是多大，放大只是临时看一次
+      const maxW = magnified ? window.innerWidth - 128 : Math.min(window.innerWidth - 200, 900);
+      const maxH = magnified ? window.innerHeight - 144 : window.innerHeight - 160;
       const ratio = 148 / 210;
       let pageW = Math.min(maxW / 2, maxH / ratio);
       let pageH = pageW / ratio;
@@ -183,7 +195,7 @@ export default function Viewer() {
     calcSize();
     window.addEventListener('resize', calcSize);
     return () => window.removeEventListener('resize', calcSize);
-  }, []);
+  }, [magnified]);
 
   // 初始化 PageFlip - 等所有准备好再开始
   useEffect(() => {
@@ -346,7 +358,18 @@ export default function Viewer() {
           }
         });
 
-        setCurrentPage(0);
+        // 书是按 bookSize 重建的，而放大镜就是靠改 bookSize 实现的
+        // （点击「🔍 放大」→ 书页尺寸变大 → 这里重跑一遍）。新建的书总是从
+        // 封面开始，所以要把书翻回原来那一页，不然点一下放大就被送回封面了。
+        // 用瞬跳 turnToPage —— 这是重建、不是在翻页，不该播一段翻页动画
+        const restore = currentPageRef.current;
+        if (restore > 0) {
+          pageFlip.turnToPage(restore);
+          setCurrentPage(restore);
+          setSpan(computeSpan(restore, n, bookSize.w));
+        } else {
+          setCurrentPage(0);
+        }
         setLoading(false); // 初始化完成，隐藏 loading
         // 下一帧再置位，让入场过渡生效
         setTimeout(() => setEntered(true), 30);
@@ -363,21 +386,25 @@ export default function Viewer() {
   }, [pageImages, bookSize]);
 
 
-  // ===== 翻页为什么不用 page-flip 的 turnToNextPage/turnToPrevPage =====
-  // 它的 showNext() 把上界写成了 `currentSpreadIndex < getSpread().length`，
-  // 应该是 `< length - 1`。在最后一个跨页再往前翻，它会先把下标 ++ 到越界值，
-  // 再在 showSpread() 里读 `undefined.length` 抛 TypeError —— 下标就卡在非法值上。
-  // 症状：到了最后一页以后，第一次按「上一页」毫无动静（那一下只是把非法下标
-  // 拉回合法，画面不变），要按第二次才真的退回去。用户的原话是"最后一页收不回来"。
-  // 这是库的内部缺陷，不该去改 node_modules；改用 turnToPage()：它的 show()
-  // 自带 `t < 0 || t >= pages.length` 的边界检查，而且是用 getSpreadIndexByPage
-  // 重新定位跨页，就算下标已经被带偏也能落回正轨。
+  // ===== 翻页为什么用 flipNext / flipPrev，而不是别的 =====
+  // page-flip 有三套翻页入口，坑在中间那套：
+  //   turnToNextPage / turnToPrevPage → 内部的 showNext()/showPrev()：瞬跳。
+  //     showNext() 把上界写成了 `currentSpreadIndex < getSpread().length`（该是
+  //     length - 1），在最后一个跨页再往后翻就会先把下标 ++ 到越界值，再读
+  //     `undefined.length` 抛 TypeError，下标卡在非法值上。症状：到末页后第一次
+  //     按「上一页」毫无反应（那一下只是把非法下标拉回合法），要按第二次才退得回去。
+  //     这是库的内部缺陷，别去改 node_modules，绕开它。
+  //   turnToPage → show()：瞬跳，自带边界检查 —— 重建书之后恢复页码用它。
+  //   flipNext / flipPrev → FlipController：**带动画**（就是点击书页走的那条路），
+  //     而且进动画之前先过一遍 checkDirection()：往后翻要求「当前页 < 总页数-1」、
+  //     往回翻要求「当前页 >= 1」，翻不动直接 return —— 那条会越界的路径走不到。
+  // 所以按钮和键盘都用 flipNext/flipPrev：翻页动画本来就是书该有的样子，放大镜里
+  // 点击书页走的是同一条路，三个入口表现完全一致。各自的边界再自己把一道，双保险。
   const goPrev = useCallback(() => {
     const pf = pageFlipRef.current;
     if (!pf) return;
-    const cur = pf.getCurrentPageIndex();
-    if (cur <= 0) return; // 已经在封面
-    pf.turnToPage(Math.max(0, cur - 2));
+    if (pf.getCurrentPageIndex() <= 0) return; // 已经在封面
+    pf.flipPrev();
   }, []);
 
   const goNext = useCallback(() => {
@@ -387,8 +414,24 @@ export default function Viewer() {
     // 封面(0) 后面接着的是第 1 页开头的跨页；其余跨页往后跳两页
     const next = cur <= 0 ? 1 : cur + 2;
     if (next >= totalPages) return; // 已经在最后一个跨页
-    pf.turnToPage(next);
+    pf.flipNext();
   }, [totalPages]);
+
+  // 放大镜开着时：点在书页以外的地方退出放大。
+  // 不能只靠黑幕自己接点击 —— page-flip 的 .stf__block 比整本书大一圈（所有页面
+  // 都并排摆在里面、靠 transform 挪到眼前），书以外那片空白也归它吃，点黑边根本
+  // 落不到黑幕上。所以按落点判断：点在书页上不动（那是翻页，page-flip 自己在处理），
+  // 点在别处就退。按钮层用 data 标记排除掉。
+  useEffect(() => {
+    if (!magnified) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t || t.closest('[data-magnify-chrome]') || t.closest('.stf__item')) return;
+      setMagnified(false);
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    return () => window.removeEventListener('pointerdown', onDown, true);
+  }, [magnified]);
 
   // 键盘快捷键
   useEffect(() => {
@@ -400,12 +443,14 @@ export default function Viewer() {
         e.preventDefault();
         goNext();
       } else if (e.key === 'Escape') {
-        navigate(`/editor/${projectId}`);
+        // 放大镜开着时，ESC 先关放大镜，别一键把人送回编辑页
+        if (magnified) setMagnified(false);
+        else navigate(`/editor/${projectId}`);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [projectId, navigate, goPrev, goNext]);
+  }, [projectId, navigate, goPrev, goNext, magnified]);
 
   // 导出 PDF
   async function handleExportPDF() {
@@ -531,6 +576,14 @@ export default function Viewer() {
             {currentPage + 1} / {totalPages}
           </span>
           <button
+            onClick={() => setMagnified(true)}
+            disabled={pageImages.length === 0}
+            className="flex items-center gap-1.5 text-sm text-white hover:text-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="放大当前跨页看文字"
+          >
+            🔍 放大
+          </button>
+          <button
             onClick={handleExportPDF}
             disabled={exporting}
             className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -580,6 +633,9 @@ export default function Viewer() {
           style={{
             width: bookSize.w || 700,
             height: bookSize.h || 500,
+            // 放大镜时把书抬到黑幕（z-30）之上：书是真的变大了，翻页动画、
+            // 点击翻页、边角手势全由 page-flip 原生处理，不能拿别的东西盖住它
+            zIndex: magnified ? 40 : undefined,
             // 摊开时的整体书阴影（开会合上的时机见 showSpreadShadow）
             boxShadow: showSpreadShadow
               ? '0 22px 55px rgba(90,70,45,0.3), 0 3px 10px rgba(90,70,45,0.2)'
@@ -657,9 +713,31 @@ export default function Viewer() {
       {/* 底部提示 */}
       <div className="h-10 bg-black/20 flex items-center justify-center flex-shrink-0 border-t border-white/10">
         <p className="text-xs text-gray-300">
-          {isClosedState ? '点击封面翻开相册' : '点击书页翻页 · 键盘 ← → 翻页 · ESC 返回'}
+          {isClosedState
+            ? '点击封面翻开相册'
+            : '点击书页翻页 · 键盘 ← → 翻页 · 🔍 放大看文字 · ESC 返回'}
         </p>
       </div>
+
+      {/* 放大镜：书本身放大到铺满屏幕（书页尺寸真的变大，见 calcSize），
+          page-flip 按新尺寸重建，所以翻页动画、点击翻页、边角手势全是原生的。
+          这层黑幕垫在书下面（书被抬到 z-40）；"点书页以外退出"由上面那个
+          落点判断的监听负责，黑幕自己接不到点击（page-flip 的 block 比书大一圈） */}
+      {magnified && <div className="fixed inset-0 z-30 bg-black/90" />}
+
+      {/* 放大镜的按钮层：箭头 / 关闭 / 提示条。整层不吃鼠标（pointer-events-none），
+          只有按钮自己接事件 —— 点在书页上要原样落到 page-flip 手里，才能翻出动画。
+          挂在最外层（没有 transform / backdrop-filter 的祖先），fixed inset-0 才相对窗口定位 */}
+      {magnified && (
+        <SpreadZoom
+          onPrev={goPrev}
+          onNext={goNext}
+          // 能不能翻，跟 goPrev / goNext 里的边界判断保持一致
+          canPrev={currentPage > 0}
+          canNext={(currentPage <= 0 ? 1 : currentPage + 2) < totalPages}
+          onClose={() => setMagnified(false)}
+        />
+      )}
     </div>
   );
 }

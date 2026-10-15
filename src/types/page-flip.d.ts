@@ -31,6 +31,11 @@ declare module 'page-flip' {
     turnToPage(pageNum: number): void;
     turnToNextPage(): void;
     turnToPrevPage(): void;
+    // 带动画的翻页，角默认 'top' —— 点击书页走的就是这条（Preview 页的
+    // 箭头和键盘也用它）。进动画前内部先过 checkDirection()：已经在首页 /
+    // 末页翻不动时直接忽略，不会越界。
+    flipNext(corner?: 'top' | 'bottom'): void;
+    flipPrev(corner?: 'top' | 'bottom'): void;
     getCurrentPageIndex(): number;
     getPageCount(): number;
     // 只用来读"这趟翻页往哪边翻"。
