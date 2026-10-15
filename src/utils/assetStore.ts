@@ -4,6 +4,7 @@ import {
   getImageRecord,
   saveImageAsset as saveImageToIDB,
 } from './storage';
+import { getImageURL, loadImage } from './image';
 import {
   getFolderStatus,
   setAttention,
@@ -110,6 +111,35 @@ export async function getImageMeta(
   const record = await getImageRecord(id).catch(() => undefined);
   if (!record) return undefined;
   return { thumbnail: record.thumbnail, width: record.width, height: record.height };
+}
+
+/**
+ * 把一批图片 id 解码成可以直接画的 HTMLImageElement（key 是 id）。
+ * 预览页加载、PDF 导出、图片导出都从这里取 —— 每处各写一份的话，
+ * 解码和回收的时机很容易只在一处改对（object URL 忘了撤就是这个坑）。
+ *
+ * 每个 id 只查一次库、只解码一次，彼此并行。这曾经是预览"加载慢"的根源：
+ * 当时每个元素都单独走一遍 getImageAsset → getImageURL → loadImage，
+ * 还是拿 await 一个个串起来的 —— 一张 4096px 的照片解码一次就几十毫秒，
+ * 同一张照片用在几页还要再解几次，20 页 40 个元素能堆到好几秒。
+ */
+export async function decodeAssets(ids: Set<string>): Promise<Map<string, HTMLImageElement>> {
+  const assets = new Map<string, HTMLImageElement>();
+  await Promise.all(
+    [...ids].map(async (id) => {
+      const asset = await getImageAsset(id);
+      if (!asset) return;
+      // 这个 URL 只为解码而建，解完立刻撤掉：位图这时已经落在 img 里了，
+      // 后面 drawImage 不再需要它。留着就是一个永远释放不掉的 object URL。
+      const url = getImageURL(asset);
+      try {
+        assets.set(id, await loadImage(url));
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    })
+  );
+  return assets;
 }
 
 /**

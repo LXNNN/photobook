@@ -4,9 +4,10 @@ import { useAppDispatch } from '@/store';
 import { setCurrentProject } from '@/store/projectSlice';
 import SpreadZoom from '@/components/viewer/SpreadZoom';
 import { getProject } from '@/utils/storage';
-import { getImageAsset } from '@/utils/assetStore';
+import { decodeAssets } from '@/utils/assetStore';
 import { ensureFolderReady } from '@/utils/folderLibrary';
-import { getImageURL, loadImage } from '@/utils/image';
+import { exportImagesZip, spreadGroups, type ImageExportMode } from '@/utils/exportImages';
+import { downloadBlob } from '@/utils/backup';
 import { mmToPx } from '@/utils/units';
 import { drawPageContent, collectAssetIds } from '@/engine/drawPageContent';
 import { jsPDF } from 'jspdf';
@@ -55,7 +56,10 @@ export default function Viewer() {
   const [isOpening, setIsOpening] = useState(false); // 正在从闭合态展开
   const [flipToClosed, setFlipToClosed] = useState(false); // 这趟翻页的落点是"只有一页"的合起态
   const [entered, setEntered] = useState(false); // 入场动画完成
-  const [exporting, setExporting] = useState(false); // 导出中
+  const [exportMenuOpen, setExportMenuOpen] = useState(false); // 「📥 导出」的小菜单
+  const [exporting, setExporting] = useState(false); // 导出中（PDF / 图片都算）
+  // 图片导出的进度（PDF 导出没这个，导出中显示"⏳ 导出中 N/M"）
+  const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
   const [magnified, setMagnified] = useState(false); // 放大镜开着
   // 当前页码的镜像。书是按 bookSize 重建的（放大 / 退出放大 / 窗口尺寸变了都会
   // 重建一次），重建后要翻回原来那一页 —— 但那个 effect 绝不能把 currentPage
@@ -106,34 +110,6 @@ export default function Viewer() {
       }
     })();
   }, [projectId, dispatch, navigate]);
-
-  /**
-   * 把一批图像 id 解码成可以直接画的元素。每个 id 只查一次库、只解码一次，彼此并行。
-   *
-   * 这曾经是预览"加载慢"的根源：当时每个元素都单独走一遍
-   * getImageAsset → getImageURL → loadImage，而且是拿 await 一个个串起来的。
-   * 一张 4096px 的照片解码一次就是几十毫秒，同一张照片用在几页还要再解几次，
-   * 20 页 40 个元素能堆到好几秒。
-   */
-  async function decodeAssets(ids: Set<string>): Promise<Map<string, HTMLImageElement>> {
-    const assets = new Map<string, HTMLImageElement>();
-    await Promise.all(
-      [...ids].map(async (id) => {
-        const asset = await getImageAsset(id);
-        if (!asset) return;
-        // 这个 URL 只为解码而建，解完立刻撤掉：位图这时已经落在 img 里了，
-        // 后面 drawImage 不再需要它。留着就是一个永远释放不掉的 object URL
-        // （原代码每次调用都新建一个、从不回收）。
-        const url = getImageURL(asset);
-        try {
-          assets.set(id, await loadImage(url));
-        } finally {
-          URL.revokeObjectURL(url);
-        }
-      })
-    );
-    return assets;
-  }
 
   // 渲染所有页面为图片
   async function renderAllPages(p: Project) {
@@ -443,14 +419,15 @@ export default function Viewer() {
         e.preventDefault();
         goNext();
       } else if (e.key === 'Escape') {
-        // 放大镜开着时，ESC 先关放大镜，别一键把人送回编辑页
-        if (magnified) setMagnified(false);
+        // ESC 逐层退：先关导出菜单、再关放大镜，最后才返回编辑页，别一键把人送走
+        if (exportMenuOpen) setExportMenuOpen(false);
+        else if (magnified) setMagnified(false);
         else navigate(`/editor/${projectId}`);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [projectId, navigate, goPrev, goNext, magnified]);
+  }, [projectId, navigate, goPrev, goNext, magnified, exportMenuOpen]);
 
   // 导出 PDF
   async function handleExportPDF() {
@@ -507,6 +484,31 @@ export default function Viewer() {
       setExporting(false);
     }
   }
+
+  // 导出图片（单面 / 双面）→ zip 打包下载
+  async function handleExportImage(mode: ImageExportMode) {
+    if (!project || exporting) return;
+    setExporting(true);
+    try {
+      const { blob, filename } = await exportImagesZip(project, mode, (done, total) =>
+        setExportProgress({ done, total })
+      );
+      downloadBlob(blob, filename);
+    } catch (err) {
+      console.error('导出图片失败:', err);
+      alert(err instanceof Error && err.message === '这本相册还没有页面，没有可导出的内容'
+        ? err.message
+        : '导出失败，请重试');
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
+    }
+  }
+
+  // ===== 导出的张数（菜单里直接告诉她会得到几张）=====
+  // 用 project.pages 而不是 pageImages：万一某页的图没生成出来，页码也还是对的
+  const pageCount = project?.pages.length ?? 0;
+  const spreadCount = spreadGroups(pageCount).length;
 
   // ===== 闭合态居中 =====
   // 闭合态：封面单独在右半（showCover 布局），平移 -W/4 让封面居中
@@ -583,13 +585,57 @@ export default function Viewer() {
           >
             🔍 放大
           </button>
-          <button
-            onClick={handleExportPDF}
-            disabled={exporting}
-            className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {exporting ? '⏳ 导出中...' : '📥 导出 PDF'}
-          </button>
+          {/* 📥 导出：PDF 和图片（单面 / 双面）都收在这个下拉里 */}
+          <div className="relative">
+            <button
+              onClick={() => setExportMenuOpen((v) => !v)}
+              disabled={exporting || !project}
+              title="导出 PDF 或图片"
+              className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {exporting
+                ? exportProgress
+                  ? `⏳ 导出中 ${exportProgress.done}/${exportProgress.total}`
+                  : '⏳ 导出中...'
+                : '📥 导出 ▾'}
+            </button>
+            {exportMenuOpen && !exporting && (
+              <>
+                {/* 点别处就把菜单收起来（满屏的透明层接住点击，不改别处的行为） */}
+                <div className="fixed inset-0 z-10" onClick={() => setExportMenuOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 z-20 w-72 py-1 bg-white border border-gray-200 rounded-lg shadow-lg">
+                  <button
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      void handleExportPDF();
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-amber-50 transition-colors"
+                  >
+                    📄 导出 PDF（打印用）
+                  </button>
+                  <div className="my-1 border-t border-gray-100" />
+                  <button
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      void handleExportImage('single');
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-amber-50 transition-colors"
+                  >
+                    🖼️ 导出图片 · 单面（每页一张，{pageCount} 张）
+                  </button>
+                  <button
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      void handleExportImage('spread');
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-amber-50 transition-colors"
+                  >
+                    🖼️ 导出图片 · 双面（左右摊开，{spreadCount} 张）
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
