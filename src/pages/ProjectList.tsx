@@ -30,6 +30,8 @@ import {
 } from '@/utils/folderLibrary';
 import { PRESET_FORMATS } from '@/types';
 import type { Project, ImageElement } from '@/types';
+// 书架页的装饰插画。放在项目里、不走外链 —— 网站不再有对外请求（原来挂在外部图床上）
+import bookshelfGirl from '@/assets/bookshelf-girl.jpg';
 
 /** 导出/导入进行中的状态。total 为 0 表示还在准备、进度未知 */
 interface BusyState {
@@ -608,7 +610,7 @@ export default function ProjectList() {
         {/* 装饰插画：书架女孩（自适应填充中间剩余空间） */}
         <div className="flex-1 flex items-center justify-center py-2 sm:py-4 min-h-0">
           <img
-            src="https://aka.doubaocdn.com/s/7Ac3nyqva8"
+            src={bookshelfGirl}
             alt="书架女孩"
             className="w-full max-w-[160px] sm:max-w-[180px] md:max-w-[200px] lg:max-w-xs object-contain"
             style={{ mixBlendMode: 'multiply' }}
