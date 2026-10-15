@@ -447,15 +447,15 @@ export const TEMPLATES: TemplateDefinition[] = [
     thumbnail: 'five-collage',
     elements: [
       // 左上竖版大图
-      { type: 'image', x: 0.05, y: 0.05, width: 0.451, height: 0.381, cropHint: 'cover' },
+      { type: 'image', x: 0.057, y: 0.05, width: 0.451, height: 0.379, cropHint: 'cover' },
       // 左下横版图
-      { type: 'image', x: 0.05, y: 0.454, width: 0.451, height: 0.381, cropHint: 'cover' },
+      { type: 'image', x: 0.057, y: 0.442, width: 0.451, height: 0.376, cropHint: 'cover' },
       // 右上横版图
-      { type: 'image', x: 0.53, y: 0.05, width: 0.42, height: 0.248, cropHint: 'cover' },
+      { type: 'image', x: 0.526, y: 0.05, width: 0.420, height: 0.248, cropHint: 'cover' },
       // 右中横版图
-      { type: 'image', x: 0.53, y: 0.319, width: 0.42, height: 0.248, cropHint: 'cover' },
+      { type: 'image', x: 0.526, y: 0.310, width: 0.420, height: 0.248, cropHint: 'cover' },
       // 右下横版图
-      { type: 'image', x: 0.53, y: 0.588, width: 0.42, height: 0.248, cropHint: 'cover' },
+      { type: 'image', x: 0.526, y: 0.571, width: 0.420, height: 0.248, cropHint: 'cover' },
       // 底部标题
       { type: 'text', x: 0.05, y: 0.887, width: 0.9, height: 0.04, placeholder: '在这里写标题', fontSizeRatio: 0.04, textAlign: 'center', fontWeight: 'bold', color: '#2c2c2c' },
     ],
