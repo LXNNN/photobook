@@ -6,7 +6,12 @@ import SpreadZoom from '@/components/viewer/SpreadZoom';
 import { getProject } from '@/utils/storage';
 import { decodeAssets } from '@/utils/assetStore';
 import { ensureFolderReady } from '@/utils/folderLibrary';
-import { exportImagesZip, spreadGroups, type ImageExportMode } from '@/utils/exportImages';
+import {
+  exportImagesZip,
+  spreadGroups,
+  SHOW_IMAGE_EXPORT_ENTRY,
+  type ImageExportMode,
+} from '@/utils/exportImages';
 import { downloadBlob } from '@/utils/backup';
 import { mmToPx } from '@/utils/units';
 import { drawPageContent, collectAssetIds } from '@/engine/drawPageContent';
@@ -585,12 +590,13 @@ export default function Viewer() {
           >
             🔍 放大
           </button>
-          {/* 📥 导出：PDF 和图片（单面 / 双面）都收在这个下拉里 */}
+          {/* 📥 导出：PDF 和图片（单面 / 双面）都收在这个下拉里，
+              图片两项这一版先隐藏（SHOW_IMAGE_EXPORT_ENTRY），菜单里只剩 PDF */}
           <div className="relative">
             <button
               onClick={() => setExportMenuOpen((v) => !v)}
               disabled={exporting || !project}
-              title="导出 PDF 或图片"
+              title={SHOW_IMAGE_EXPORT_ENTRY ? '导出 PDF 或图片' : '导出 PDF（打印用）'}
               className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {exporting
@@ -613,25 +619,31 @@ export default function Viewer() {
                   >
                     📄 导出 PDF（打印用）
                   </button>
-                  <div className="my-1 border-t border-gray-100" />
-                  <button
-                    onClick={() => {
-                      setExportMenuOpen(false);
-                      void handleExportImage('single');
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-amber-50 transition-colors"
-                  >
-                    🖼️ 导出图片 · 单面（每页一张，{pageCount} 张）
-                  </button>
-                  <button
-                    onClick={() => {
-                      setExportMenuOpen(false);
-                      void handleExportImage('spread');
-                    }}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-amber-50 transition-colors"
-                  >
-                    🖼️ 导出图片 · 双面（左右摊开，{spreadCount} 张）
-                  </button>
+                  {/* 图片导出两项这一版先藏着（开关在 utils/exportImages.ts），
+                      实现和上面的 handleExportImage 都留着，放开就改一个 true */}
+                  {SHOW_IMAGE_EXPORT_ENTRY && (
+                    <>
+                      <div className="my-1 border-t border-gray-100" />
+                      <button
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          void handleExportImage('single');
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-amber-50 transition-colors"
+                      >
+                        🖼️ 导出图片 · 单面（每页一张，{pageCount} 张）
+                      </button>
+                      <button
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          void handleExportImage('spread');
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-amber-50 transition-colors"
+                      >
+                        🖼️ 导出图片 · 双面（左右摊开，{spreadCount} 张）
+                      </button>
+                    </>
+                  )}
                 </div>
               </>
             )}

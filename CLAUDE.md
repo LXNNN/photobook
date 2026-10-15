@@ -80,7 +80,7 @@ npm run preview   # 预览构建产物
 - 先把所有页渲染成 150dpi JPEG blob（`toBlob` + object URL，离开时统一 revoke）；所有图片只解码一次（`decodeAssets`，按 id 并行，解码用的临时 object URL 解完立刻 revoke）——`decodeAssets` 在 `utils/assetStore.ts`，预览页加载、PDF 导出、图片导出三处共用同一份，别在页面里另写
 - PageFlip 在异步链里创建（等图片加载 + 动态 import）。必须：① 用 `cancelled` 标志 + `created` 变量防 StrictMode/依赖变化导致**同一容器上建两套书**（症状：残页、互相盖）；② 传**自己造的 div 壳**给 PageFlip，绝不能传 React 管的节点——`pageFlip.destroy()` 会把它删掉，React 不知道，书就永远消失
 - 翻页一律走 `flipNext/flipPrev`（点击书页、方向键、左右按钮、放大镜都是这一条路，带翻页动画）；**别用 `turnToNextPage/turnToPrevPage`**——它内部 `showNext()` 差一，末页再翻越界抛 TypeError（已修，绕开的）。`turnToPage` 是瞬跳，只用于重建书之后恢复页码
-- 「📥 导出」下拉（PDF / 图片单面 / 图片双面）在顶栏；图片导出实现在 `utils/exportImages.ts`，300dpi + JPEG 0.95（与 PDF 同规格），zip 用 ZipPassThrough 只封装不压缩（同 `backup.ts` 的做法）
+- 「📥 导出」下拉在顶栏：**图片两项（单面 / 双面）这一版先隐藏**（`SHOW_IMAGE_EXPORT_ENTRY = false`，在 `utils/exportImages.ts`，同 Editor 的 `SHOW_BODY_STYLE_ENTRY` 套路），菜单里只剩 PDF；**实现全留着别删**，开放只改那一个 true。图片导出 300dpi + JPEG 0.95（与 PDF 同规格），zip 用 ZipPassThrough 只封装不压缩（同 `backup.ts` 的做法），跨页中间压一条灰书缝（`SPINE_*` 常量）
 - 双面导出的跨页分组（`spreadGroups`）必须与 page-flip `showCover` 的翻开规律一致：`[0]`（封面单独）、`[1,2]`、`[3,4]`…、总页数为偶数时末页单独在左。改开本/页序逻辑时两边一起想
 - 闭合态/摊开态的投影、书脊、居中偏移是精细调过的视觉状态，改动前先读懂 `Viewer.tsx` 里的注释（合起态是镜像不是重合、摊开投影的亮灭时机与书脊相反）
 

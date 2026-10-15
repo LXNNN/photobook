@@ -34,6 +34,13 @@ const SPINE_WIDTH = 8;
 export type ImageExportMode = 'single' | 'spread';
 
 /**
+ * 图片导出（单面 / 双面）的入口开关：这个版本先藏起来，后续再开放。
+ * 只是不显示菜单项 —— 实现、跨页规则（spreadGroups）、书缝、进度提示全都留着，
+ * 想放出来把这里改成 true 即可（和 Editor 的 SHOW_BODY_STYLE_ENTRY 一个套路）。
+ */
+export const SHOW_IMAGE_EXPORT_ENTRY = false;
+
+/**
  * 跨页分组，规则与预览页（page-flip showCover）完全一致：
  * [0]（封面）、[1,2]、[3,4]…，总页数为偶数时末页单独在左（背封）。
  * 双面导出和菜单里的张数预览都用它，别在别处再写一套。
