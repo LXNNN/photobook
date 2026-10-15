@@ -146,6 +146,14 @@ function drawTextElement(ctx: CanvasRenderingContext2D, el: TextElement, dpi: nu
   const fontSize = el.fontSize * (dpi / 96);
   const lineHeightPx = fontSize * el.lineHeight;
 
+  // 背景色（可无）：每行文字后面一条底色——长行色条长、短行色条短，
+  // 居中/居右的行色条跟着文字走。左右各留一点边距，字不贴色条边；
+  // 上下按「行高比字多出来的部分两边各分一半」让字在色条里居中，
+  // 这样相邻两行的色条正好首尾相接，多行看起来是连着的一片。
+  const bg = el.backgroundColor;
+  const bgPadX = fontSize * 0.2;
+  const bgOffsetY = (lineHeightPx - fontSize) / 2;
+
   ctx.fillStyle = el.color;
   const weight = el.fontWeight || 'normal';
   ctx.font = `${weight} ${fontSize}px ${el.fontFamily}`;
@@ -153,6 +161,19 @@ function drawTextElement(ctx: CanvasRenderingContext2D, el: TextElement, dpi: nu
   ctx.textBaseline = 'top';
 
   let startY = y;
+
+  // 画一行（先底色、后文字），并把光标准备到下一行
+  const flushLine = (line: string) => {
+    if (bg) {
+      const lineW = ctx.measureText(line).width;
+      const lineX = alignStartX(el.textAlign, x, w, lineW);
+      ctx.fillStyle = bg;
+      ctx.fillRect(lineX - bgPadX, startY - bgOffsetY, lineW + bgPadX * 2, lineHeightPx);
+      ctx.fillStyle = el.color;
+    }
+    drawLine(ctx, line, x, startY, w, el.textAlign);
+    startY += lineHeightPx;
+  };
 
   // 自动换行：先按段落分割，再逐字测量宽度
   const paragraphs = el.content.split('\n');
@@ -166,8 +187,7 @@ function drawTextElement(ctx: CanvasRenderingContext2D, el: TextElement, dpi: nu
 
       if (metrics.width > w && currentLine !== '') {
         // 当前行放不下，换行
-        drawLine(ctx, currentLine, x, startY, w, el.textAlign);
-        startY += lineHeightPx;
+        flushLine(currentLine);
         currentLine = words[i];
       } else {
         currentLine = testLine;
@@ -176,10 +196,16 @@ function drawTextElement(ctx: CanvasRenderingContext2D, el: TextElement, dpi: nu
 
     // 画最后一行
     if (currentLine) {
-      drawLine(ctx, currentLine, x, startY, w, el.textAlign);
-      startY += lineHeightPx;
+      flushLine(currentLine);
     }
   }
+}
+
+/** 一行文字的起始 x（按对齐方式算，色条就画在这个位置） */
+function alignStartX(align: string, x: number, w: number, lineWidth: number): number {
+  if (align === 'center') return x + (w - lineWidth) / 2;
+  if (align === 'right') return x + w - lineWidth;
+  return x;
 }
 
 /** 画一行文字（根据对齐方式计算 x） */

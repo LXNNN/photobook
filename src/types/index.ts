@@ -93,6 +93,12 @@ export interface TextElement extends BaseElement {
   fontFamily: string;
   fontWeight?: FontWeight;
   color: string;
+  /**
+   * 背景色（右侧栏「文字属性 → 背景色」加的）：每行文字后面一条底色，
+   * 长行色条长、短行色条短，居中/居右的行色条跟着走。
+   * 不填 = 无背景（老相册、模板默认都没有）。
+   */
+  backgroundColor?: string;
   textAlign: 'left' | 'center' | 'right';
   lineHeight: number;
   letterSpacing: number;

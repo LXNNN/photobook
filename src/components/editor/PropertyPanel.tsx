@@ -315,6 +315,24 @@ function TextProperties({ el, onUpdate }: { el: TextElement; onUpdate: (u: Parti
           </div>
         </div>
         <div>
+          <label className="block text-xs text-gray-500 mb-1.5">背景色</label>
+          <div className="flex items-center gap-2">
+            <input type="color" value={el.backgroundColor ?? '#fff3b0'}
+              onChange={(e) => onUpdate({ backgroundColor: e.target.value })}
+              className="w-10 h-9 border border-gray-200 rounded cursor-pointer"
+              title="选文字的背景色" />
+            <span className="flex-1 text-xs text-gray-500">{el.backgroundColor ?? '无背景'}</span>
+            {el.backgroundColor && (
+              <button
+                onClick={() => onUpdate({ backgroundColor: undefined })}
+                className="px-2 py-1.5 text-xs rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                去掉
+              </button>
+            )}
+          </div>
+        </div>
+        <div>
           <label className="block text-xs text-gray-500 mb-1.5">对齐方式</label>
           <div className="flex gap-1">
             {(['left', 'center', 'right'] as const).map((align) => (

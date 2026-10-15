@@ -45,6 +45,8 @@ export interface TemplateElement {
   fontWeight?: FontWeight;
   /** 文字颜色 */
   color?: string;
+  /** 文字背景色（每行文字后面一条底色）；不填 = 无背景 */
+  backgroundColor?: string;
   /** 图片元素的裁剪提示 */
   cropHint?: 'cover' | 'contain';
   /** 图片元素的裁剪区域（相对原图，0-1）；不填则铺满整张图 */
@@ -633,6 +635,8 @@ export function applyTemplate(
         textAlign: tplEl.textAlign || 'left',
         lineHeight: tplEl.lineHeight ?? 1.5,
         letterSpacing: 0,
+        // 模板带了背景色就带上（「新建模板」存下来的页可能有；老模板没有这个字段）
+        backgroundColor: tplEl.backgroundColor,
         fixed: (tplEl as any).fixed || false,
         // 显式表态：模板出来的每个文字都写明是不是正文 / 标题，
         // 全站不用再靠字号猜（封面尾页那几段也是显式的 false）
@@ -789,6 +793,8 @@ export function pageElementsToTemplateElements(
       if (text.fixed) t.fixed = true;
       // 正文标记同理：丢了下次应用就变成「装饰小字」，不再填文案、也不跟正文样式走
       if (text.body !== undefined) t.body = text.body;
+      // 背景色也要写回，不然「新建模板」存下来下次应用就丢了
+      if (text.backgroundColor) t.backgroundColor = text.backgroundColor;
       return t;
     });
 }
