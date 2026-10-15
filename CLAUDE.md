@@ -9,7 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 技术栈：React 18 + TypeScript（strict）+ Vite 5 + Redux Toolkit + Tailwind CSS + page-flip（翻书动画）+ idb + jspdf + fflate + heic-to
 - 部署：GitHub Pages，地址 `https://LXNNN.github.io/photobook/`
 - 完整需求背景见 `项目设计文档.md` 和 `电子相册网站开发提示词.md`（后者是给 AI 的完整开发提示词，包含全部关键设计规则）
-- 这两个设计文档和 `docs/` **不上传 GitHub**（已写进 .gitignore 且已 `git rm --cached`），只保留在本地
+- 文字的「标题 / 正文」标记、默认字号颜色、封面尾页为什么排除——改字号、加模板、做全局样式弹窗之前，先看 `文字系统说明.md`
+- 这些设计文档和 `docs/` **不上传 GitHub**（已写进 .gitignore 且已 `git rm --cached`），只保留在本地
 - 面向用户的使用指南是 `电子相册网站-使用指南.md`（同步到飞书文档发给用户）；网站功能有变化时，提醒同步更新这份指南
 - 这是一个个人项目，没有测试、没有 lint、没有 CI。验证靠真实浏览器手动测试（无头浏览器画不出书页，别用它验证渲染）
 
