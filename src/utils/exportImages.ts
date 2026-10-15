@@ -11,7 +11,7 @@ import { safeFolderName } from './fileNames';
  * 两种方式：
  * - 单面：一页一张
  * - 双面：按预览页翻开的跨页规则拼成一排 —— 封面单独、[2,3]、[4,5]…、末页落单
- *   时也单独一张（规则见 spreadGroups）。拼缝处不留缝不画线，就是把书摊平的样子。
+ *   时也单独一张（规则见 spreadGroups）。两页中间压一条灰线当书缝，一眼看出是摊开的两页。
  *
  * 渲染走 drawPageContent（和 PDF 导出、预览页同一份绘制实现）、300dpi + JPEG，
  * 和 PDF 里的每一页同规格 —— PDF 里是什么样，导出的图就是什么样。
@@ -21,6 +21,15 @@ import { safeFolderName } from './fileNames';
 const EXPORT_DPI = 300;
 /** JPEG 质量：和 PDF 导出同档 */
 const JPEG_QUALITY = 0.95;
+
+/**
+ * 跨页中间那条书缝。
+ * 颜色用半透明黑而不是固定灰：页面底色有白有米色，半透明黑在哪都是"压暗一点"，
+ * 不会在深色底上跳出来。
+ */
+const SPINE_COLOR = 'rgba(0, 0, 0, 0.2)';
+/** 书缝宽度（画布像素）。300dpi 下 8px ≈ 0.7mm，缩到手机上看仍然看得见、又不抢戏 */
+const SPINE_WIDTH = 8;
 
 export type ImageExportMode = 'single' | 'spread';
 
@@ -127,6 +136,9 @@ export async function exportImagesZip(
       sctx.drawImage(pageCanvas, 0, 0);
       drawPageTo(pages[group[1]], format, assets, pageCanvas);
       sctx.drawImage(pageCanvas, pageCanvas.width, 0);
+      // 最后压上中间那条书缝：跨过中线左右各半，模拟书的两页
+      sctx.fillStyle = SPINE_COLOR;
+      sctx.fillRect(pageCanvas.width - SPINE_WIDTH / 2, 0, SPINE_WIDTH, spreadCanvas.height);
       bytes = await toJpegBytes(spreadCanvas);
     }
     addFile(groupFileName(group), bytes);
