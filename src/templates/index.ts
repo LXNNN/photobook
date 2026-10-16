@@ -673,7 +673,7 @@ export function applyTemplate(
       // 封面/尾页模板里的字整块不算标题：竖排 TIME、「✦」是按设计稿摆的，
       // 大标题也是给这一页量身定的尺寸（比正文页标题大一圈）。显式标 false，
       // 之后「全局改标题样式」就不会把封面也改了
-      const title = isTitle && template.category !== '封面尾页';
+      const title = isTitle && template.category !== '封面' && template.category !== '尾页';
       let content: string;
       let actualFontSizeRatio = fontSizeRatio;
 
@@ -1024,7 +1024,7 @@ export function reapplyTemplateKeepingContent(
 /**
  * 模板分类的固定显示顺序
  */
-const CATEGORY_ORDER = ['封面', '尾页', '一图', '二图', '三图', '四图', '五图', '六图', '十图', '文字封面', '我的模板'];
+const CATEGORY_ORDER: TemplateDefinition['category'][] = ['封面', '尾页', '一图', '二图', '三图', '四图', '五图', '六图', '十图', '文字封面', '我的模板'];
 
 /**
  * 获取模板分类列表（按固定顺序排列）
