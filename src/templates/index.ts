@@ -37,6 +37,8 @@ export interface TemplateElement {
    * 封面上的英文小字、「记录者」这类短标签不标 —— 它们是排版的一部分。
    */
   body?: boolean;
+  /** 短正文标记：空间小的正文区域，从主题短正文库取一行短句，不用长正文 */
+  shortBody?: boolean;
   /** 文字元素的默认字号（相对页面宽度的比例）；正文标记的元素只是备用基准 */
   fontSizeRatio?: number;
   /** 文字对齐 */
@@ -505,6 +507,8 @@ export const TEMPLATES: TemplateDefinition[] = [
     description: '左列2张+右列3张，整体缩小留白更多，简约文艺',
     thumbnail: 'five-collage-whitespace',
     elements: [
+      // 左上一行短句正文（标记 shortBody，从主题短正文库取一行短句）
+      { type: 'text', x: 0.1, y: 0.1033, width: 0.406, height: 0.035, placeholder: '生活明朗，万物可爱', body: true, shortBody: true, fontSizeRatio: 0.03, textAlign: 'left', color: '#666666', lineHeight: 1.5 },
       // 左上竖版大图
       { type: 'image', x: 0.1, y: 0.154, width: 0.406, height: 0.341, cropHint: 'cover' },
       // 左下横版图
@@ -681,43 +685,43 @@ export function applyTemplate(
       if ((tplEl as any).fixed) {
         content = tplEl.placeholder || '';
       } else if (isBody) {
-        // 正文：从主题文案库 / 模板文案库里取
+        // 正文：主题文案库优先；标记 shortBody 的用主题短正文（一行短句），普通正文用主题长正文
+        const isShortBody = (tplEl as any).shortBody === true;
         if (theme) {
-          // 主题模式：多正文位置的模板按顺序取预选的3条
-          if (themePickedBodies.length > 1) {
+          if (isShortBody) {
+            // 短正文：从主题短正文库取（一行短句）
+            content = randomPick(theme.shortParagraphs || theme.paragraphs);
+          } else if (themePickedBodies.length > 1) {
+            // 长正文：多正文位置按顺序取预选的3条
             content = themePickedBodies[bodyPickIndex] || '';
             bodyPickIndex++;
           } else {
             content = randomPick(theme.paragraphs);
           }
         } else if (templateCopyList && templateCopyList.length > 0) {
-          // 模板文案模式（旅行/日常主题）
+          // 没有主题时用模板专属文案库
           const randomCopy = randomPick(templateCopyList);
-          // 正文：如果预选了多条正文（多正文位置模板），按顺序取
           if (pickedBodies.length > 0) {
             content = pickedBodies[bodyPickIndex] || '';
             bodyPickIndex++;
           } else if (randomCopy.paragraphs && Array.isArray(randomCopy.paragraphs)) {
-            // 单条文案里的多段正文
             content = randomCopy.paragraphs[paragraphIndex] || '';
             paragraphIndex++;
           } else {
             content = randomCopy.body || tplEl.placeholder || '';
           }
         } else {
-          // 没有对应文案库的模板，保留模板里写的那段
           content = tplEl.placeholder || '';
         }
         // 正文字号跟相册的正文样式走（默认 13pt，可在「🎨 正文样式」里改）
         actualFontSizeRatio = bodyFontSize / (format.width * 2.83);
       } else if (isTitle) {
-        // 标题：主题模式取标题库，模板文案模式取这条文案的标题
+        // 标题：主题文案库优先
         if (theme) {
           content = randomPick(theme.pageTitles);
         } else if (templateCopyList && templateCopyList.length > 0) {
           content = randomPick(templateCopyList).title || tplEl.placeholder || '';
         } else {
-          // 没有对应文案库的模板，用原来的随机文案，字号也保持原样
           content = tplEl.placeholder ?? getRandomText(true, false, false);
         }
       } else {
