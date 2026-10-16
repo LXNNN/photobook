@@ -34,11 +34,11 @@ const SPINE_WIDTH = 8;
 export type ImageExportMode = 'single' | 'spread';
 
 /**
- * 图片导出（单面 / 双面）的入口开关：这个版本先藏起来，后续再开放。
- * 只是不显示菜单项 —— 实现、跨页规则（spreadGroups）、书缝、进度提示全都留着，
- * 想放出来把这里改成 true 即可（和 Editor 的 SHOW_BODY_STYLE_ENTRY 一个套路）。
+ * 图片导出（单面 / 双面）的入口开关。
+ * 2026-10-16 起开放（她要用来给打印社/发图）；想再藏起来就把这里改成 false，
+ * 菜单项消失、实现全留着（和 Editor 的 SHOW_BODY_STYLE_ENTRY 一个套路）。
  */
-export const SHOW_IMAGE_EXPORT_ENTRY = false;
+export const SHOW_IMAGE_EXPORT_ENTRY = true;
 
 /**
  * 跨页分组，规则与预览页（page-flip showCover）完全一致：

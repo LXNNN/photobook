@@ -590,8 +590,8 @@ export default function Viewer() {
           >
             🔍 放大
           </button>
-          {/* 📥 导出：PDF 和图片（单面 / 双面）都收在这个下拉里，
-              图片两项这一版先隐藏（SHOW_IMAGE_EXPORT_ENTRY），菜单里只剩 PDF */}
+          {/* 📥 导出：PDF 和图片（单面 / 双面）都收在这个下拉里；
+              图片两项的开关在 utils/exportImages.ts（SHOW_IMAGE_EXPORT_ENTRY，现为开放） */}
           <div className="relative">
             <button
               onClick={() => setExportMenuOpen((v) => !v)}
@@ -619,8 +619,7 @@ export default function Viewer() {
                   >
                     📄 导出 PDF（打印用）
                   </button>
-                  {/* 图片导出两项这一版先藏着（开关在 utils/exportImages.ts），
-                      实现和上面的 handleExportImage 都留着，放开就改一个 true */}
+                  {/* 图片导出两项（开关在 utils/exportImages.ts，现为开放；藏起来就改 false） */}
                   {SHOW_IMAGE_EXPORT_ENTRY && (
                     <>
                       <div className="my-1 border-t border-gray-100" />
