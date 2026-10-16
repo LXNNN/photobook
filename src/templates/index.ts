@@ -225,8 +225,8 @@ export const TEMPLATES: TemplateDefinition[] = [
     description: '上下两张图片，中间留白，简洁干净',
     thumbnail: 'two-stack',
     elements: [
-      { type: 'image', x: 0.08, y: 0.05, width: 0.84, height: 0.42, cropHint: 'cover' },
-      { type: 'image', x: 0.08, y: 0.53, width: 0.84, height: 0.42, cropHint: 'cover' },
+      { type: 'image', x: 0.08, y: 0.05, width: 0.84, height: 0.4381, cropHint: 'cover' },
+      { type: 'image', x: 0.08, y: 0.512, width: 0.84, height: 0.4381, cropHint: 'cover' },
     ],
   },
   {
