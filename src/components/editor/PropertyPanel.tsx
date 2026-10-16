@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { updateElement, setPageBackground, setPageTemplateId } from '@/store/projectSlice';
+import { updateElement, setPageBackground, setPageTemplateId, addElement, pushHistory } from '@/store/projectSlice';
+import { selectElement } from '@/store/editorSlice';
 import { getImageAsset, saveImageAsset } from '@/utils/assetStore';
 import { persistTemplate } from '@/utils/templateLibrary';
 import { fileToImageAsset, getImageURL } from '@/utils/image';
 import { FONT_OPTIONS, FONT_WEIGHTS } from '@/utils/fonts';
+import { generateId } from '@/utils/units';
 import {
   TEMPLATES,
   getTemplateById,
@@ -14,7 +16,7 @@ import {
   getTemplatesVersion,
 } from '@/templates';
 import ImageCropper from './ImageCropper';
-import type { Page, Element, ImageElement, TextElement } from '@/types';
+import type { Page, Element, ImageElement, TextElement, ShapeElement } from '@/types';
 
 interface Props {
   page: Page;
@@ -37,9 +39,21 @@ export default function PropertyPanel({ page, pageIndex, selectedIds, projectId 
     ? page.elements.find((el) => el.id === selectedIds[0])
     : null;
 
+  const isMultiSelect = selectedIds.length > 1;
+
   function updateEl(updates: Partial<Element>) {
     if (!selectedElement) return;
     dispatch(updateElement({ pageIndex, elementId: selectedElement.id, updates }));
+  }
+
+  // 多选时批量移动所有选中元素
+  function moveSelectedElements(deltaX: number, deltaY: number) {
+    for (const id of selectedIds) {
+      const el = page.elements.find((e) => e.id === id);
+      if (el) {
+        dispatch(updateElement({ pageIndex, elementId: id, updates: { x: el.x + deltaX, y: el.y + deltaY } }));
+      }
+    }
   }
 
   return (
@@ -74,7 +88,16 @@ export default function PropertyPanel({ page, pageIndex, selectedIds, projectId 
       )}
 
       {/* 页面属性（无选中时） */}
-      {!selectedElement && <PageProperties page={page} pageIndex={pageIndex} />}
+      {selectedIds.length === 0 && <PageProperties page={page} pageIndex={pageIndex} />}
+
+      {/* 多选组属性（选中多个元素时） */}
+      {isMultiSelect && (
+        <MultiSelectPanel
+          page={page}
+          selectedIds={selectedIds}
+          onMove={moveSelectedElements}
+        />
+      )}
 
       {/* 图片元素属性 */}
       {selectedElement?.type === 'image' && (
@@ -89,6 +112,11 @@ export default function PropertyPanel({ page, pageIndex, selectedIds, projectId 
       {/* 文字元素属性 */}
       {selectedElement?.type === 'text' && (
         <TextProperties el={selectedElement as TextElement} onUpdate={updateEl} />
+      )}
+
+      {/* 形状/选区元素属性 */}
+      {selectedElement?.type === 'shape' && (
+        <ShapeProperties el={selectedElement as ShapeElement} onUpdate={updateEl} />
       )}
     </div>
   );
@@ -195,12 +223,77 @@ function TemplateActions({ page, pageIndex, onDone }: { page: Page; pageIndex: n
 
 function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) {
   const dispatch = useAppDispatch();
+  const project = useAppSelector((s) => s.project.current);
+  const format = project?.format;
+
+  // 添加照片选区（空图片占位符）
+  const handleAddImageSlot = () => {
+    if (!format) return;
+    const maxZ = page.elements.length > 0 ? Math.max(...page.elements.map((e) => e.zIndex)) : -1;
+    const newElement: ImageElement = {
+      id: generateId(),
+      type: 'image',
+      x: format.width * 0.15,
+      y: format.height * 0.2,
+      width: format.width * 0.7,
+      height: format.height * 0.3,
+      rotation: 0,
+      opacity: 1,
+      zIndex: maxZ + 1,
+      imageId: '',
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+    };
+    dispatch(addElement({ pageIndex, element: newElement }));
+    dispatch(selectElement(newElement.id));
+  };
+
+  // 添加普通选区（可设置背景色的形状）
+  const handleAddShapeSlot = () => {
+    if (!format) return;
+    const maxZ = page.elements.length > 0 ? Math.max(...page.elements.map((e) => e.zIndex)) : -1;
+    const newElement: ShapeElement = {
+      id: generateId(),
+      type: 'shape',
+      x: format.width * 0.15,
+      y: format.height * 0.2,
+      width: format.width * 0.7,
+      height: format.height * 0.3,
+      rotation: 0,
+      opacity: 1,
+      zIndex: maxZ + 1,
+      backgroundColor: '#e8e4de',
+      borderRadius: 0,
+    };
+    dispatch(addElement({ pageIndex, element: newElement }));
+    dispatch(selectElement(newElement.id));
+  };
 
   return (
     <div className="p-4">
       <h3 className="text-sm font-medium text-gray-700 mb-4">页面属性</h3>
 
       <div className="space-y-4">
+        {/* 临时隐藏：添加选区功能（照片选区/普通选区），以后开放，将 false 改为 true 即可恢复 */}
+        {false && (
+        <div className="pb-4 border-b border-gray-100">
+          <label className="block text-xs text-gray-500 mb-2">添加选区</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={handleAddImageSlot}
+              className="py-2 px-3 text-xs rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors font-medium"
+            >
+              🖼️ 照片选区
+            </button>
+            <button
+              onClick={handleAddShapeSlot}
+              className="py-2 px-3 text-xs rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors font-medium"
+            >
+              ⬜ 普通选区
+            </button>
+          </div>
+        </div>
+        )}
+
         <div>
           <label className="block text-xs text-gray-500 mb-1.5">背景颜色</label>
           <div className="flex items-center gap-2">
@@ -219,13 +312,6 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
           </div>
         </div>
 
-        <div className="pt-4 border-t border-gray-100">
-          <p className="text-xs text-gray-400">
-            选中元素后可编辑其属性。<br />
-            支持拖拽移动、缩放、旋转。
-          </p>
-        </div>
-
         {/* 快捷背景色 */}
         <div>
           <label className="block text-xs text-gray-500 mb-1.5">常用背景</label>
@@ -239,6 +325,13 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
               />
             ))}
           </div>
+        </div>
+
+        <div className="pt-2 border-t border-gray-100">
+          <p className="text-xs text-gray-400">
+            选中元素后可编辑其属性。<br />
+            支持拖拽移动、缩放、旋转。
+          </p>
         </div>
       </div>
     </div>
@@ -383,6 +476,203 @@ function PositionFields({ el, onChange }: { el: Element; onChange: (u: Partial<E
           onChange={(e) => onChange({ height: parseFloat(e.target.value) || 1 })}
           className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded" />
       </div>
+    </div>
+  );
+}
+
+// ==================== 多选组属性面板 ====================
+
+function MultiSelectPanel({ page, selectedIds, onMove }: {
+  page: Page;
+  selectedIds: string[];
+  onMove: (deltaX: number, deltaY: number) => void;
+}) {
+  // 计算选中组的边界
+  const selectedElements = selectedIds
+    .map((id) => page.elements.find((el) => el.id === id))
+    .filter((el): el is Element => !!el);
+
+  let minX = Infinity, minY = Infinity;
+  for (const el of selectedElements) {
+    minX = Math.min(minX, el.x);
+    minY = Math.min(minY, el.y);
+  }
+
+  const handleXChange = (newX: number) => {
+    onMove(newX - minX, 0);
+  };
+
+  const handleYChange = (newY: number) => {
+    onMove(0, newY - minY);
+  };
+
+  return (
+    <div className="p-3 border-b border-gray-100">
+      <div className="text-sm font-medium text-gray-700 mb-2">已选中 {selectedIds.length} 个元素</div>
+      <div className="text-xs text-gray-400 mb-3">修改坐标可整体移动选中组</div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1.5">X (mm)</label>
+          <input
+            type="number"
+            value={Math.round(minX * 10) / 10}
+            step="0.5"
+            onChange={(e) => handleXChange(parseFloat(e.target.value) || 0)}
+            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1.5">Y (mm)</label>
+          <input
+            type="number"
+            value={Math.round(minY * 10) / 10}
+            step="0.5"
+            onChange={(e) => handleYChange(parseFloat(e.target.value) || 0)}
+            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== 形状/选区属性面板 ====================
+
+function ShapeProperties({ el, onUpdate }: { el: ShapeElement; onUpdate: (u: Partial<Element>) => void }) {
+  const dispatch = useAppDispatch();
+  const project = useAppSelector((s) => s.project.current);
+  const currentPageIndex = useAppSelector((s) => s.editor.currentPageIndex);
+  const page = project?.pages[currentPageIndex];
+
+  // 统一的层级调整：重新排序后交换位置，再重新分配所有元素的zIndex（确保唯一稳定）
+  const adjustLayer = (direction: 'forward' | 'backward') => {
+    if (!page) return;
+    // 按 zIndex 升序排序，zIndex 相同的按原数组顺序（后添加的在上层）
+    const sorted = [...page.elements].sort((a, b) => {
+      if (a.zIndex !== b.zIndex) return a.zIndex - b.zIndex;
+      return page.elements.indexOf(a) - page.elements.indexOf(b);
+    });
+    const currentIndex = sorted.findIndex((e) => e.id === el.id);
+    if (currentIndex === -1) return;
+
+    // 上一层：和后一个交换；下一层：和前一个交换
+    let targetIndex: number;
+    if (direction === 'forward') {
+      if (currentIndex >= sorted.length - 1) return; // 已经最上层
+      targetIndex = currentIndex + 1;
+    } else {
+      if (currentIndex <= 0) return; // 已经最下层
+      targetIndex = currentIndex - 1;
+    }
+
+    // 交换排序数组中的位置
+    [sorted[currentIndex], sorted[targetIndex]] = [sorted[targetIndex], sorted[currentIndex]];
+
+    // 重新分配所有元素的 zIndex（0,1,2,3... 确保唯一稳定）
+    dispatch(pushHistory());
+    sorted.forEach((element, index) => {
+      if (element.zIndex !== index) {
+        dispatch(updateElement({ pageIndex: currentPageIndex, elementId: element.id, updates: { zIndex: index } }));
+      }
+    });
+  };
+
+  const handleBringForward = () => adjustLayer('forward');
+  const handleSendBackward = () => adjustLayer('backward');
+
+  // 直接更新当前元素（使用 el.id，确保只更新当前选中的元素）
+  const handleUpdate = (updates: Partial<Element>) => {
+    dispatch(updateElement({ pageIndex: currentPageIndex, elementId: el.id, updates }));
+  };
+
+  return (
+    <div className="p-4">
+      <h3 className="text-sm font-medium text-gray-700 mb-4">普通选区</h3>
+
+      <div className="space-y-4">
+        {/* 层级调整 */}
+        <div>
+          <label className="block text-xs text-gray-500 mb-1.5">层级调整</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={handleBringForward}
+              className="py-1.5 px-2 text-xs rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+            >
+              ⬆️ 上一层
+            </button>
+            <button
+              onClick={handleSendBackward}
+              className="py-1.5 px-2 text-xs rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+            >
+              ⬇️ 下一层
+            </button>
+          </div>
+        </div>
+
+        {/* 背景色 */}
+        <div>
+          <label className="block text-xs text-gray-500 mb-1.5">背景颜色</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={el.backgroundColor || '#e8e4de'}
+              onChange={(e) => handleUpdate({ backgroundColor: e.target.value })}
+              className="w-10 h-10 rounded cursor-pointer border border-gray-200"
+            />
+            <input
+              type="text"
+              value={el.backgroundColor || '#e8e4de'}
+              onChange={(e) => handleUpdate({ backgroundColor: e.target.value })}
+              className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded"
+            />
+          </div>
+        </div>
+
+        {/* 常用颜色 */}
+        <div>
+          <label className="block text-xs text-gray-500 mb-1.5">常用颜色</label>
+          <div className="grid grid-cols-6 gap-1.5">
+            {['#ffffff', '#faf8f5', '#f5f0e8', '#e8e4de', '#d4cfc7', '#2c2c2c', '#fef3c7', '#dbeafe', '#dcfce7', '#fce7f3', '#ede9fe', '#fee2e2'].map((color) => (
+              <button
+                key={color}
+                onClick={() => handleUpdate({ backgroundColor: color })}
+                className="w-full aspect-square rounded border border-gray-200 hover:scale-110 transition-transform"
+                style={{ backgroundColor: color }}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* 圆角 */}
+        <div>
+          <label className="block text-xs text-gray-500 mb-1.5">圆角 (mm)</label>
+          <input
+            type="number"
+            value={el.borderRadius || 0}
+            step="1"
+            min="0"
+            onChange={(e) => handleUpdate({ borderRadius: parseFloat(e.target.value) || 0 })}
+            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded"
+          />
+        </div>
+
+        {/* 不透明度 */}
+        <div>
+          <label className="block text-xs text-gray-500 mb-1.5">不透明度: {Math.round((el.opacity ?? 1) * 100)}%</label>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={el.opacity ?? 1}
+            onChange={(e) => handleUpdate({ opacity: parseFloat(e.target.value) })}
+            className="w-full"
+          />
+        </div>
+      </div>
+
+      {/* 位置尺寸 */}
+      <PositionFields el={el} onChange={handleUpdate} />
     </div>
   );
 }

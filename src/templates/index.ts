@@ -12,7 +12,7 @@ import { DEFAULT_BODY_COLOR, DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
 export interface TemplateDefinition {
   id: string;
   name: string;
-  category: '封面尾页' | '图片为主' | '图文混排' | '多图拼贴' | '文字为主' | '特殊样式' | '我的模板';
+  category: '封面' | '尾页' | '一图' | '二图' | '三图' | '四图' | '五图' | '六图' | '十图' | '文字封面' | '我的模板';
   description: string;
   /** 缩略图用的 SVG 路径（用于模板面板预览） */
   thumbnail: string;
@@ -69,7 +69,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'cover-minimal',
     name: '极简封面',
-    category: '封面尾页',
+    category: '封面',
     description: '左上角大标题，简洁高级，适合文艺风',
     thumbnail: 'cover-minimal',
     elements: [
@@ -82,7 +82,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'cover-travel-journal',
     name: '杂志封面',
-    category: '封面尾页',
+    category: '封面',
     description: '白底大标题 + 满幅大图，左侧四角星与竖排 TIME 装饰，极简杂志风',
     thumbnail: 'cover-travel-journal',
     elements: [
@@ -114,7 +114,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'ending-page',
     name: '结尾寄语',
-    category: '封面尾页',
+    category: '尾页',
     description: '全幅大图+居中寄语，适合做尾页',
     thumbnail: 'ending-page',
     elements: [
@@ -127,7 +127,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'ending-minimal',
     name: '页尾（未完待续）',
-    category: '封面尾页',
+    category: '尾页',
     description: '居中方形照片+未完待续+年份，简约文艺尾页',
     thumbnail: 'ending-minimal',
     elements: [
@@ -144,7 +144,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'full-image',
     name: '单图满版',
-    category: '图片为主',
+    category: '一图',
     description: '一张大图铺满全页，底部留空间加文字',
     thumbnail: 'full',
     elements: [
@@ -155,7 +155,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'full-image-bordered',
     name: '满版图（带边框）',
-    category: '图片为主',
+    category: '一图',
     description: '一张图填满页面，四周留白边框，无文案',
     thumbnail: 'full-bordered',
     elements: [
@@ -165,7 +165,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'image-top-text-bottom',
     name: '上图下文',
-    category: '图文混排',
+    category: '一图',
     description: '上方大图，下方文字区域，经典旅行日记版式',
     thumbnail: 'top-bottom',
     elements: [
@@ -177,7 +177,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'text-top-image-bottom',
     name: '上文下图',
-    category: '图文混排',
+    category: '一图',
     description: '上方文字区域，下方大图，适合开篇寄语或章节页',
     thumbnail: 'text-top-image-bottom',
     elements: [
@@ -190,7 +190,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'image-left-text-right',
     name: '左图右文',
-    category: '图文混排',
+    category: '一图',
     description: '左侧图片，右侧文字，三段正文段间有空隙',
     thumbnail: 'left-right',
     elements: [
@@ -204,7 +204,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'text-left-image-right',
     name: '左文右图',
-    category: '图文混排',
+    category: '一图',
     description: '左侧文字，右侧图片，三段正文段间有空隙',
     thumbnail: 'right-left',
     elements: [
@@ -219,7 +219,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'two-images-stack',
     name: '双图横板',
-    category: '多图拼贴',
+    category: '二图',
     description: '上下两张图片，中间留白，简洁干净',
     thumbnail: 'two-stack',
     elements: [
@@ -230,7 +230,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'two-images-slanted',
     name: '双图留白',
-    category: '多图拼贴',
+    category: '二图',
     description: '上下两张横图居中，大量留白，左上角配小字文案，文艺感强',
     thumbnail: 'two-slanted',
     elements: [
@@ -245,7 +245,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'three-collage',
     name: '三图拼贴',
-    category: '多图拼贴',
+    category: '三图',
     description: '一大两小的杂志风拼贴，活泼有层次',
     thumbnail: 'three-collage',
     elements: [
@@ -259,7 +259,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'three-collage-v2',
     name: '三图错落',
-    category: '多图拼贴',
+    category: '三图',
     description: '左上大图+右上文字小图+底部横图，层次丰富',
     thumbnail: 'three-collage-v2',
     elements: [
@@ -278,7 +278,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'three-top-bottom',
     name: '三图上下排版',
-    category: '多图拼贴',
+    category: '三图',
     description: '上方横版大图+下方两张竖版小图，底部配标题和正文，适合家庭回忆照',
     thumbnail: 'three-top-bottom',
     elements: [
@@ -297,7 +297,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'three-stairs',
     name: '三图阶梯',
-    category: '多图拼贴',
+    category: '三图',
     description: '三张竖版照片从左下到右上阶梯错落排列，左上角配标题和短句文案',
     thumbnail: 'three-stairs',
     elements: [
@@ -314,9 +314,47 @@ export const TEMPLATES: TemplateDefinition[] = [
     ],
   },
   {
+    id: 'three-title-top',
+    name: '三图顶标题底正文',
+    category: '三图',
+    description: '顶部标题+中间左大图右两小图+底部正文，简约文艺',
+    thumbnail: 'three-title-top',
+    elements: [
+      // 标题
+      { type: 'text', x: 0.0927, y: 0.1091, width: 0.84, height: 0.08, placeholder: '在这里写标题', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      // 左中大图
+      { type: 'image', x: 0.0927, y: 0.1891, width: 0.5094, height: 0.5038, cropHint: 'cover' },
+      // 右上小图
+      { type: 'image', x: 0.6189, y: 0.1891, width: 0.2838, height: 0.2452, cropHint: 'cover' },
+      // 右中小图
+      { type: 'image', x: 0.6189, y: 0.4462, width: 0.2838, height: 0.2452, cropHint: 'cover' },
+      // 正文
+      { type: 'text', x: 0.0927, y: 0.7609, width: 0.8116, height: 0.1229, placeholder: '在这里写下你的故事和感受...', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'three-top-two-bottom-wide',
+    name: '三图上两下横',
+    category: '三图',
+    description: '顶部右对齐标题+上方两小图+中间横大图+底部正文，错落有致',
+    thumbnail: 'three-top-two-bottom-wide',
+    elements: [
+      // 标题（右对齐）
+      { type: 'text', x: 0.4614, y: 0.1656, width: 0.38, height: 0.05, placeholder: '在这里写标题', fontSizeRatio: 0.045, textAlign: 'right', fontWeight: 'bold', color: '#2c2c2c' },
+      // 左上小图
+      { type: 'image', x: 0.1507, y: 0.2295, width: 0.3412, height: 0.2463, cropHint: 'cover' },
+      // 右上小图
+      { type: 'image', x: 0.5061, y: 0.2295, width: 0.3412, height: 0.2463, cropHint: 'cover' },
+      // 中间横大图
+      { type: 'image', x: 0.1507, y: 0.4867, width: 0.6969, height: 0.2379, cropHint: 'cover' },
+      // 正文
+      { type: 'text', x: 0.1507, y: 0.7739, width: 0.6954, height: 0.18, placeholder: '在这里写下你的故事和感受...', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
     id: 'four-literary',
     name: '四图文艺排版',
-    category: '多图拼贴',
+    category: '四图',
     description: '四张图错落排列+底部标题正文，文艺杂志风，适合旅行感悟',
     thumbnail: 'four-literary',
     elements: [
@@ -339,37 +377,37 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'four-grid',
     name: '四图网格',
-    category: '多图拼贴',
+    category: '四图',
     description: '2x2 均匀网格，适合展示系列照片',
     thumbnail: 'four-grid',
     elements: [
-      { type: 'image', x: 0.0588, y: 0.0657, width: 0.43, height: 0.43, cropHint: 'cover' },
-      { type: 'image', x: 0.5135, y: 0.0657, width: 0.43, height: 0.43, cropHint: 'cover' },
-      { type: 'image', x: 0.0588, y: 0.5152, width: 0.43, height: 0.43, cropHint: 'cover' },
-      { type: 'image', x: 0.5135, y: 0.5176, width: 0.43, height: 0.43, cropHint: 'cover' },
+      { type: 'image', x: 0.0588, y: 0.05, width: 0.43, height: 0.4381, cropHint: 'cover' },
+      { type: 'image', x: 0.5135, y: 0.05, width: 0.43, height: 0.4381, cropHint: 'cover' },
+      { type: 'image', x: 0.0588, y: 0.5081, width: 0.43, height: 0.4381, cropHint: 'cover' },
+      { type: 'image', x: 0.5135, y: 0.5081, width: 0.43, height: 0.4381, cropHint: 'cover' },
     ],
   },
   {
     id: 'four-magazine',
     name: '四图杂志风',
-    category: '多图拼贴',
+    category: '四图',
     description: '左大右小错落布局，杂志感十足',
     thumbnail: 'four-magazine',
     elements: [
       // 左上大图
       { type: 'image', x: 0.05, y: 0.05, width: 0.62, height: 0.55, cropHint: 'cover' },
       // 右上小图1
-      { type: 'image', x: 0.70, y: 0.05, width: 0.25, height: 0.266, cropHint: 'cover' },
+      { type: 'image', x: 0.6932, y: 0.05, width: 0.25, height: 0.266, cropHint: 'cover' },
       // 右上小图2
-      { type: 'image', x: 0.70, y: 0.335, width: 0.25, height: 0.265, cropHint: 'cover' },
-      // 左下横图
-      { type: 'image', x: 0.05, y: 0.624, width: 0.90, height: 0.326, cropHint: 'cover' },
+      { type: 'image', x: 0.6932, y: 0.3305, width: 0.25, height: 0.269, cropHint: 'cover' },
+      // 底部横大图
+      { type: 'image', x: 0.05, y: 0.6167, width: 0.8919, height: 0.3333, cropHint: 'cover' },
     ],
   },
   {
     id: 'four-grid-whitespace',
     name: '四图留白',
-    category: '多图拼贴',
+    category: '四图',
     description: '2x2田字格四张图，四周大量留白，底部配标题和正文，文艺感强',
     thumbnail: 'four-grid-ws',
     elements: [
@@ -390,27 +428,27 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'four-left3-right1',
     name: '四图三小一大',
-    category: '多图拼贴',
+    category: '四图',
     description: '左列三张小竖图，右列一张大图，底部带文案',
     thumbnail: 'four-left3-right1',
     elements: [
-      // 左列三张小图（紧凑一点）
-      { type: 'image', x: 0.08, y: 0.06, width: 0.32, height: 0.20, cropHint: 'cover' },
-      { type: 'image', x: 0.08, y: 0.28, width: 0.32, height: 0.20, cropHint: 'cover' },
-      { type: 'image', x: 0.08, y: 0.50, width: 0.32, height: 0.20, cropHint: 'cover' },
-      // 右边大图（左右缝隙缩小）
-      { type: 'image', x: 0.42, y: 0.06, width: 0.50, height: 0.64, cropHint: 'cover' },
+      // 左列三张小图
+      { type: 'image', x: 0.0791, y: 0.05, width: 0.32, height: 0.2048, cropHint: 'cover' },
+      { type: 'image', x: 0.0791, y: 0.2676, width: 0.32, height: 0.2048, cropHint: 'cover' },
+      { type: 'image', x: 0.0791, y: 0.4852, width: 0.32, height: 0.2048, cropHint: 'cover' },
+      // 右边大图
+      { type: 'image', x: 0.4168, y: 0.05, width: 0.5, height: 0.64, cropHint: 'cover' },
       // 底部标题
-      { type: 'text', x: 0.08, y: 0.74, width: 0.7162, height: 0.05, placeholder: '标题', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
-      // 底部正文（区域大一点）
-      { type: 'text', x: 0.08, y: 0.80, width: 0.7162, height: 0.16, placeholder: '写点什么...', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333' },
+      { type: 'text', x: 0.073, y: 0.7353, width: 0.7162, height: 0.05, placeholder: '在这里写标题', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
+      // 底部正文
+      { type: 'text', x: 0.073, y: 0.7953, width: 0.7162, height: 0.16, placeholder: '在这里写下你的故事和感受...', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333', lineHeight: 1.5 },
     ],
   },
   // ============ 文字为主 ============
   {
     id: 'text-cover',
     name: '文字封面',
-    category: '文字为主',
+    category: '文字封面',
     description: '大标题+副标题，适合做封面或章节页',
     thumbnail: 'text-cover',
     elements: [
@@ -423,7 +461,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'dual-portrait',
     name: '双图竖版',
-    category: '图文混排',
+    category: '二图',
     description: '两张竖版照片并列，上下加标题和文案',
     thumbnail: 'dual-portrait',
     elements: [
@@ -442,7 +480,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   {
     id: 'five-collage',
     name: '五图拼贴',
-    category: '多图拼贴',
+    category: '五图',
     description: '左列2张+右列3张，适合旅行记录',
     thumbnail: 'five-collage',
     elements: [
@@ -461,9 +499,78 @@ export const TEMPLATES: TemplateDefinition[] = [
     ],
   },
   {
+    id: 'five-collage-whitespace',
+    name: '五图拼贴留白',
+    category: '五图',
+    description: '左列2张+右列3张，整体缩小留白更多，简约文艺',
+    thumbnail: 'five-collage-whitespace',
+    elements: [
+      // 左上竖版大图
+      { type: 'image', x: 0.1, y: 0.154, width: 0.406, height: 0.341, cropHint: 'cover' },
+      // 左下横版图
+      { type: 'image', x: 0.1, y: 0.507, width: 0.406, height: 0.338, cropHint: 'cover' },
+      // 右上横版图
+      { type: 'image', x: 0.522, y: 0.154, width: 0.378, height: 0.223, cropHint: 'cover' },
+      // 右中横版图
+      { type: 'image', x: 0.522, y: 0.388, width: 0.378, height: 0.223, cropHint: 'cover' },
+      // 右下横版图
+      { type: 'image', x: 0.522, y: 0.623, width: 0.378, height: 0.223, cropHint: 'cover' },
+      // 底部标题
+      { type: 'text', x: 0.05, y: 0.907, width: 0.9, height: 0.04, placeholder: '在这里写标题', fontSizeRatio: 0.04, textAlign: 'center', fontWeight: 'bold', color: '#2c2c2c' },
+    ],
+  },
+  {
+    id: 'five-left-right-mixed',
+    name: '五图左右混排',
+    category: '五图',
+    description: '左侧两图+正文，右侧正文+三图，左右交错混排，文艺感强',
+    thumbnail: 'five-left-right-mixed',
+    elements: [
+      // 左上小图
+      { type: 'image', x: 0.0732, y: 0.0814, width: 0.3986, height: 0.2024, cropHint: 'cover' },
+      // 左中小图
+      { type: 'image', x: 0.0732, y: 0.2962, width: 0.3986, height: 0.2024, cropHint: 'cover' },
+      // 右上正文（短文案，2行）
+      { type: 'text', x: 0.502, y: 0.1222, width: 0.4212, height: 0.0952, placeholder: '在这里写下短句...', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333', lineHeight: 1.5 },
+      // 左下正文（长文案，4-5行）
+      { type: 'text', x: 0.0732, y: 0.5869, width: 0.3912, height: 0.0952, placeholder: '在这里写下你的故事和感受...', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333', lineHeight: 1.5 },
+      // 右上图
+      { type: 'image', x: 0.4906, y: 0.2519, width: 0.4324, height: 0.2095, cropHint: 'cover' },
+      // 右中图
+      { type: 'image', x: 0.4906, y: 0.4727, width: 0.4324, height: 0.2095, cropHint: 'cover' },
+      // 右下图
+      { type: 'image', x: 0.4906, y: 0.6927, width: 0.4324, height: 0.2095, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'six-grid-slow',
+    name: '六图慢递',
+    category: '六图',
+    description: '顶部正文+3行2列六图+右下大标题，文艺慢生活风格',
+    thumbnail: 'six-grid-slow',
+    elements: [
+      // 顶部正文
+      { type: 'text', x: 0.1399, y: 0.1163, width: 0.6, height: 0.0624, placeholder: '慢下来，去感受风的形状，去听花开的声音，去看云卷云舒。日子很长，我们慢慢走，慢慢爱', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333', lineHeight: 1.5 },
+      // 第1行左图
+      { type: 'image', x: 0.1399, y: 0.2, width: 0.3514, height: 0.1905, cropHint: 'cover' },
+      // 第1行右图
+      { type: 'image', x: 0.5081, y: 0.2, width: 0.3514, height: 0.1905, cropHint: 'cover' },
+      // 第2行左图
+      { type: 'image', x: 0.1399, y: 0.4019, width: 0.3514, height: 0.1905, cropHint: 'cover' },
+      // 第2行右图
+      { type: 'image', x: 0.5081, y: 0.4019, width: 0.3514, height: 0.1905, cropHint: 'cover' },
+      // 第3行左图
+      { type: 'image', x: 0.1399, y: 0.6034, width: 0.3514, height: 0.1905, cropHint: 'cover' },
+      // 第3行右图
+      { type: 'image', x: 0.5081, y: 0.6034, width: 0.3514, height: 0.1905, cropHint: 'cover' },
+      // 底部右侧标题
+      { type: 'text', x: 0.2435, y: 0.8473, width: 0.6, height: 0.0952, placeholder: '时光慢递', fontSizeRatio: 0.0549, textAlign: 'right', fontWeight: 'bold', color: '#2c2c2c', lineHeight: 1.5 },
+    ],
+  },
+  {
     id: 'nine-grid-avatar',
     name: '九宫格头像',
-    category: '多图拼贴',
+    category: '十图',
     description: '顶部头像+标题文案，下方3×3九宫格紧凑排列，适合朋友圈合集',
     thumbnail: 'nine-grid-avatar',
     elements: [
@@ -915,10 +1022,16 @@ export function reapplyTemplateKeepingContent(
 }
 
 /**
- * 获取模板分类列表
+ * 模板分类的固定显示顺序
+ */
+const CATEGORY_ORDER = ['封面', '尾页', '一图', '二图', '三图', '四图', '五图', '六图', '十图', '文字封面', '我的模板'];
+
+/**
+ * 获取模板分类列表（按固定顺序排列）
  */
 export function getTemplateCategories(): string[] {
-  return Array.from(new Set(TEMPLATES.map((t) => t.category)));
+  const allCategories = new Set(TEMPLATES.map((t) => t.category));
+  return CATEGORY_ORDER.filter((c) => allCategories.has(c));
 }
 
 /**

@@ -55,6 +55,8 @@ const TEMPLATES_BY_COUNT: Record<number, string[]> = {
     'three-collage-v2',    // 三图错落
     'three-top-bottom',    // 三图上下排版
     'three-stairs',        // 三图阶梯
+    'three-title-top',     // 三图顶标题底正文
+    'three-top-two-bottom-wide', // 三图上两下横
   ],
   4: [
     'four-grid',           // 四宫格
@@ -65,6 +67,11 @@ const TEMPLATES_BY_COUNT: Record<number, string[]> = {
   ],
   5: [
     'five-collage',        // 五图拼贴
+    'five-collage-whitespace', // 五图拼贴留白
+    'five-left-right-mixed', // 五图左右混排
+  ],
+  6: [
+    'six-grid-slow',       // 六图慢递
   ],
   10: [
     'nine-grid-avatar',    // 九宫格头像（1张头像 + 9张九宫格）

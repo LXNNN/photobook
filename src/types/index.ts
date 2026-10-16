@@ -43,11 +43,11 @@ export interface PageBackground {
   value: string;
 }
 
-export type Element = ImageElement | TextElement | StickerElement;
+export type Element = ImageElement | TextElement | StickerElement | ShapeElement;
 
 export interface BaseElement {
   id: string;
-  type: 'image' | 'text' | 'sticker';
+  type: 'image' | 'text' | 'sticker' | 'shape';
   x: number;
   y: number;
   width: number;
@@ -63,6 +63,21 @@ export interface ImageElement extends BaseElement {
   imageId: string;
   crop: CropArea;
   filter?: FilterSettings;
+}
+
+/**
+ * 形状/选区元素：普通选区，可设置背景色、圆角等
+ */
+export interface ShapeElement extends BaseElement {
+  type: 'shape';
+  /** 背景色 */
+  backgroundColor: string;
+  /** 圆角（mm），默认 0 */
+  borderRadius?: number;
+  /** 边框颜色 */
+  borderColor?: string;
+  /** 边框宽度（mm） */
+  borderWidth?: number;
 }
 
 export interface CropArea {

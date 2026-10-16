@@ -154,6 +154,45 @@ export const FIVE_COLLAGE_TEXTS = [
   { title: '把日子过成诗', body: '把日子过成诗' },
 ];
 
+// ============ 五图左右混排（右上角短文案2行 + 左下角长文案4-5行） ============
+export const FIVE_LEFT_RIGHT_MIXED_TEXTS = [
+  {
+    title: '旅行的意义',
+    paragraphs: [
+      '走过的路，看过的风景，都成了记忆里最珍贵的部分。',
+      '旅行的意义，不在于去了多少地方，而在于在路上遇见的那些人、那些事，以及那个不一样的自己。把烦恼丢在身后，把期待装进行囊，去看看这个世界的美好。每一次出发，都是一次成长；每一次归来，都带着满满的能量。'
+    ]
+  },
+  {
+    title: '好久不见',
+    paragraphs: [
+      '好久不见，你还是老样子，真好。',
+      '有些人，不管多久没见，一开口就还是熟悉的感觉。我们分享彼此的生活，吐槽工作的烦恼，回忆过去的傻事。时间在走，年龄在长，但只要和你们在一起，我就还是那个无忧无虑的自己。愿我们的友谊，经得起时间，熬得过距离。'
+    ]
+  },
+  {
+    title: '感受生活',
+    paragraphs: [
+      '生活不是赶路，而是感受路。',
+      '那些沿途的风景、遇见的人、发生的故事，才是最珍贵的收获。不用急着到达终点，慢慢走，慢慢看，慢慢感受。原来生活中有这么多值得记录的小确幸，一顿好吃的饭，一次愉快的聊天，一个温暖的拥抱，都值得被珍藏。'
+    ]
+  },
+  {
+    title: '成长记录',
+    paragraphs: [
+      '成长是一场漫长的旅行，沿途有鲜花也有荆棘。',
+      '感谢一路走来的自己，也感谢陪伴在身边的你们。那些难熬的日子，那些开心的瞬间，都在悄悄塑造着我们。不用和别人比，只要今天的自己比昨天好一点点，就够了。慢慢来，一切都会好起来的，你想要的，岁月都会给你。'
+    ]
+  },
+  {
+    title: '时光印记',
+    paragraphs: [
+      '时光匆匆，唯有记录能让美好永恒。',
+      '把这些瞬间都收藏起来，在往后的日子里慢慢回味。原来我们已经一起走过了这么多路，经历了这么多事。照片会褪色，记忆会模糊，但那些感动和温暖，会一直留在心里。愿我们都能在平凡的日子里，找到属于自己的那束光，慢慢生活，好好爱。'
+    ]
+  },
+];
+
 // ============ 九宫格头像（小标题 + 30-50字正文，2-3行） ============
 export const NINE_GRID_AVATAR_TEXTS = [
   {
@@ -189,11 +228,16 @@ export const TEMPLATE_COPY_MAP: Record<string, any[]> = {
   'three-collage-v2': THREE_OFFSET_TEXTS,
   'three-top-bottom': THREE_COLLAGE_TEXTS,
   'three-stairs': THREE_OFFSET_TEXTS,
+  'three-title-top': THREE_COLLAGE_TEXTS,
+  'three-top-two-bottom-wide': THREE_COLLAGE_TEXTS,
   'two-images-slanted': THREE_OFFSET_TEXTS,
   'four-left3-right1': THREE_COLLAGE_TEXTS,
   'four-literary': THREE_COLLAGE_TEXTS,
   'four-grid-whitespace': FOUR_GRID_WHITESPACE_TEXTS,
   'five-collage': FIVE_COLLAGE_TEXTS,
+  'five-collage-whitespace': FIVE_COLLAGE_TEXTS,
+  'five-left-right-mixed': FIVE_LEFT_RIGHT_MIXED_TEXTS,
+  'six-grid-slow': FOUR_GRID_WHITESPACE_TEXTS,
   'nine-grid-avatar': NINE_GRID_AVATAR_TEXTS,
 };
 

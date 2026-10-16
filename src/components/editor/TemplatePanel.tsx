@@ -105,7 +105,9 @@ export default function TemplatePanel({ format, onApplied }: Props) {
     <div className="space-y-4">
       {categories.map((category) => (
         <div key={category}>
-          <h4 className="text-xs font-medium text-gray-500 mb-2 px-1">{category}</h4>
+          <h4 className="text-xs font-bold text-gray-600 mb-2 px-1 flex items-center gap-1">
+            <span className="text-sm">🖼️</span>{category}
+          </h4>
           <div className="grid grid-cols-2 gap-2">
             {getTemplatesByCategory(category).map((template) => (
               // 用 div 而不是 button：删除按钮要嵌在里面，button 套 button 是非法 HTML

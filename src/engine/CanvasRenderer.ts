@@ -68,9 +68,15 @@ export class CanvasRenderer {
   private showBleed = true;
   private hoverTargetId: string | null = null;
   private alignGuides: { vertical: number[]; horizontal: number[] } = { vertical: [], horizontal: [] };
+  private boundaryDistance: { left: number; right: number; top: number; bottom: number; x: number; y: number; width: number; height: number; leftTargetX: number; rightTargetX: number; topTargetY: number; bottomTargetY: number } | null = null;
 
   setAlignGuides(guides: { vertical: number[]; horizontal: number[] }) {
     this.alignGuides = guides;
+    this.markDirty();
+  }
+
+  setBoundaryDistance(dist: { left: number; right: number; top: number; bottom: number; x: number; y: number; width: number; height: number; leftTargetX: number; rightTargetX: number; topTargetY: number; bottomTargetY: number } | null) {
+    this.boundaryDistance = dist;
     this.markDirty();
   }
 
@@ -91,6 +97,9 @@ export class CanvasRenderer {
 
     // 绘制对齐辅助线
     this.drawAlignGuides();
+
+    // 绘制边界距离
+    this.drawBoundaryDistance();
 
     // 绘制选中框
     const elements = [...this.currentPage.elements].sort((a, b) => a.zIndex - b.zIndex);
@@ -133,6 +142,80 @@ export class CanvasRenderer {
       ctx.lineTo(width, py);
       ctx.stroke();
     }
+
+    ctx.restore();
+  }
+
+  /** 绘制元素距离页面四边的距离标注 */
+  private drawBoundaryDistance() {
+    if (!this.boundaryDistance) return;
+    const ctx = this.ctx;
+    const d = this.boundaryDistance;
+    const dpi = this.dpi;
+
+    // 元素中心位置
+    const elCenterX = d.x + d.width / 2;
+    const elCenterY = d.y + d.height / 2;
+
+    ctx.save();
+    ctx.strokeStyle = '#2196f3';
+    ctx.fillStyle = '#2196f3';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // 绘制距离标注的辅助函数
+    const drawLabel = (text: string, cxMm: number, cyMm: number) => {
+      const cx = mmToPx(cxMm, dpi);
+      const cy = mmToPx(cyMm, dpi);
+      // 测量文字宽度，画背景框
+      const metrics = ctx.measureText(text);
+      const padX = 4;
+      const padY = 2;
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(33, 150, 243, 0.9)';
+      ctx.fillRect(cx - metrics.width / 2 - padX, cy - 7 - padY, metrics.width + padX * 2, 14 + padY * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(text, cx, cy);
+      ctx.setLineDash([4, 3]);
+      ctx.fillStyle = '#2196f3';
+    };
+
+    // 左边距离：从左侧目标（相邻元素右边缘或页边）到元素左边缘
+    const leftLineY = elCenterY;
+    ctx.beginPath();
+    ctx.moveTo(mmToPx(d.leftTargetX, dpi), mmToPx(leftLineY, dpi));
+    ctx.lineTo(mmToPx(d.x, dpi), mmToPx(leftLineY, dpi));
+    ctx.stroke();
+    drawLabel(`${d.left}mm`, (d.leftTargetX + d.x) / 2, leftLineY);
+
+    // 右边距离：从元素右边缘到右侧目标（相邻元素左边缘或页边）
+    const rightLineY = elCenterY;
+    const elRight = d.x + d.width;
+    ctx.beginPath();
+    ctx.moveTo(mmToPx(elRight, dpi), mmToPx(rightLineY, dpi));
+    ctx.lineTo(mmToPx(d.rightTargetX, dpi), mmToPx(rightLineY, dpi));
+    ctx.stroke();
+    drawLabel(`${d.right}mm`, (elRight + d.rightTargetX) / 2, rightLineY);
+
+    // 上边距离：从上方目标（相邻元素下边缘或页边）到元素上边缘
+    const topLineX = elCenterX;
+    ctx.beginPath();
+    ctx.moveTo(mmToPx(topLineX, dpi), mmToPx(d.topTargetY, dpi));
+    ctx.lineTo(mmToPx(topLineX, dpi), mmToPx(d.y, dpi));
+    ctx.stroke();
+    drawLabel(`${d.top}mm`, topLineX, (d.topTargetY + d.y) / 2);
+
+    // 下边距离：从元素下边缘到下方目标（相邻元素上边缘或页边）
+    const bottomLineX = elCenterX;
+    const elBottom = d.y + d.height;
+    ctx.beginPath();
+    ctx.moveTo(mmToPx(bottomLineX, dpi), mmToPx(elBottom, dpi));
+    ctx.lineTo(mmToPx(bottomLineX, dpi), mmToPx(d.bottomTargetY, dpi));
+    ctx.stroke();
+    drawLabel(`${d.bottom}mm`, bottomLineX, (elBottom + d.bottomTargetY) / 2);
 
     ctx.restore();
   }
@@ -196,16 +279,18 @@ export class CanvasRenderer {
       ctx.strokeRect(hx - handleSize / 2, hy - handleSize / 2, handleSize, handleSize);
     }
 
-    // 旋转控制点（顶部）
-    const rotY = y - 24;
-    ctx.beginPath();
-    ctx.moveTo(x + w / 2, y);
-    ctx.lineTo(x + w / 2, rotY);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x + w / 2, rotY, 6, 0, Math.PI * 2);
-    ctx.fillStyle = '#2196f3';
-    ctx.fill();
+    // 旋转控制点（顶部）—— shape 类型（普通选区）不显示旋转控制点
+    if (el.type !== 'shape') {
+      const rotY = y - 24;
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, y);
+      ctx.lineTo(x + w / 2, rotY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x + w / 2, rotY, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#2196f3';
+      ctx.fill();
+    }
 
     ctx.restore();
   }

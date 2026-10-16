@@ -22,6 +22,7 @@ export class InteractionManager {
   private mode: InteractionMode = 'none';
   private startMouse: { x: number; y: number } = { x: 0, y: 0 };
   private startElement: Element | null = null;
+  private dragStartElements: Element[] = [];
   private activeHandle: string | null = null;
 
   // 回调
@@ -32,6 +33,7 @@ export class InteractionManager {
   onPanChange?: (pan: { x: number; y: number }) => void;
   onZoomChange?: (zoom: number, center?: { x: number; y: number }) => void;
   onAlignGuides?: (guides: { vertical: number[]; horizontal: number[] }) => void;
+  onBoundaryDistance?: (dist: { left: number; right: number; top: number; bottom: number; x: number; y: number; width: number; height: number; leftTargetX: number; rightTargetX: number; topTargetY: number; bottomTargetY: number } | null) => void;
   onDragStart?: () => void; // 拖拽开始时调用（用于记录历史）
   onHoverTargetChange?: (targetId: string | null) => void; // 拖拽调换位置时的目标变化
   onTextEdit?: (elementId: string, content: string, x: number, y: number, width: number, height: number, fontSize: number, textAlign: string) => void; // 双击文字开始编辑
@@ -102,8 +104,11 @@ export class InteractionManager {
       tl: [el.x, el.y], tc: [cx, el.y], tr: [el.x + el.width, el.y],
       ml: [el.x, cy], mr: [el.x + el.width, cy],
       bl: [el.x, el.y + el.height], bc: [cx, el.y + el.height], br: [el.x + el.width, el.y + el.height],
-      rotate: [cx, el.y - pxToMm(24, this.dpi) / this.zoom],
     };
+    // shape 类型（普通选区）不显示旋转控制点
+    if (el.type !== 'shape') {
+      handles.rotate = [cx, el.y - pxToMm(24, this.dpi) / this.zoom];
+    }
 
     for (const [name, [hx, hy]] of Object.entries(handles)) {
       if (Math.abs(localX - hx) <= handleSizeMm && Math.abs(localY - hy) <= handleSizeMm) {
@@ -117,6 +122,8 @@ export class InteractionManager {
     this.canvas.addEventListener('mousedown', this.handleMouseDown);
     this.canvas.addEventListener('mousemove', this.handleMouseMove);
     this.canvas.addEventListener('mouseup', this.handleMouseUp);
+    // 在 window 上监听 mouseup，确保鼠标在 canvas 外面松开也能结束拖拽
+    window.addEventListener('mouseup', this.handleMouseUp);
     this.canvas.addEventListener('wheel', this.handleWheel);
     this.canvas.addEventListener('dblclick', this.handleDblClick);
   }
@@ -304,6 +311,33 @@ export class InteractionManager {
     let snappedRight = elRight;
     let snappedBottom = elBottom;
 
+    // 检测页面边界吸附（左、右、上、下）
+    const pageLeft = 0;
+    const pageRight = this.format.width;
+    const pageTop = 0;
+    const pageBottom = this.format.height;
+
+    // 左边界吸附
+    if (Math.abs(elLeft - pageLeft) < tolerance) {
+      snappedX = pageLeft;
+      verticalGuides.push(pageLeft);
+    }
+    // 右边界吸附
+    if (Math.abs(elRight - pageRight) < tolerance) {
+      snappedRight = pageRight;
+      verticalGuides.push(pageRight);
+    }
+    // 上边界吸附
+    if (Math.abs(elTop - pageTop) < tolerance) {
+      snappedY = pageTop;
+      horizontalGuides.push(pageTop);
+    }
+    // 下边界吸附
+    if (Math.abs(elBottom - pageBottom) < tolerance) {
+      snappedBottom = pageBottom;
+      horizontalGuides.push(pageBottom);
+    }
+
     // 检测垂直对齐（竖线）
     for (const other of otherElements) {
       const lines = [
@@ -390,9 +424,31 @@ export class InteractionManager {
     // 命中检测
     const hit = this.hitTest(this.elements, x, y);
     if (hit) {
-      if (!this.selectedIds.includes(hit.element.id)) {
-        this.onSelect?.(hit.element.id, e.shiftKey);
+      const isMulti = e.ctrlKey || e.shiftKey;
+      const isAlreadySelected = this.selectedIds.includes(hit.element.id);
+
+      if (isMulti && isAlreadySelected) {
+        // Ctrl+点击已选中元素：取消选中，不进入拖拽
+        this.onSelect?.(hit.element.id, true);
+        this.mode = 'none';
+        return;
       }
+
+      if (isMulti) {
+        // Ctrl+点击未选中元素：加入多选
+        this.onSelect?.(hit.element.id, true);
+        // 拖拽所有选中元素（包括刚加入的）
+        const dragIds = [...this.selectedIds, hit.element.id];
+        this.dragStartElements = dragIds
+          .map((id) => this.elements.find((e) => e.id === id))
+          .filter((e): e is Element => !!e)
+          .map((e) => ({ ...e }));
+      } else {
+        // 普通点击：只选中并拖拽当前点击的最上层元素，不受之前多选状态影响
+        this.onSelect?.(hit.element.id, false);
+        this.dragStartElements = [{ ...hit.element }];
+      }
+
       this.mode = 'drag';
       this.startElement = { ...hit.element };
       this.onDragStart?.(); // 通知外部记录历史
@@ -475,10 +531,113 @@ export class InteractionManager {
         // 通知渲染层画辅助线
         this.onAlignGuides?.(guides);
 
-        this.onElementChange?.(this.startElement.id, {
-          x: newX,
-          y: newY,
+        // 计算位移量（基于主拖拽元素的吸附后位置）
+        let deltaX = newX - this.startElement!.x;
+        let deltaY = newY - this.startElement!.y;
+
+        // 计算所有选中元素的新位置，找到整个选中组的边界
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const el of this.dragStartElements) {
+          const nx = el.x + deltaX;
+          const ny = el.y + deltaY;
+          minX = Math.min(minX, nx);
+          maxX = Math.max(maxX, nx + el.width);
+          minY = Math.min(minY, ny);
+          maxY = Math.max(maxY, ny + el.height);
+        }
+
+        // 页面边界限制：整个选中组不能拖出页面，到页边时自动停下来
+        if (minX < 0) {
+          deltaX += -minX;
+        }
+        if (maxX > this.format.width) {
+          deltaX -= (maxX - this.format.width);
+        }
+        if (minY < 0) {
+          deltaY += -minY;
+        }
+        if (maxY > this.format.height) {
+          deltaY -= (maxY - this.format.height);
+        }
+
+        // 重新计算边界（应用边界限制后）
+        minX = Infinity; maxX = -Infinity; minY = Infinity; maxY = -Infinity;
+        for (const el of this.dragStartElements) {
+          const nx = el.x + deltaX;
+          const ny = el.y + deltaY;
+          minX = Math.min(minX, nx);
+          maxX = Math.max(maxX, nx + el.width);
+          minY = Math.min(minY, ny);
+          maxY = Math.max(maxY, ny + el.height);
+        }
+
+        // 计算到周围元素的间距：优先显示到最近元素的距离，没有元素时显示到页边
+        const otherElements = this.elements.filter((e) => !this.selectedIds.includes(e.id));
+        // 左边：找在选中组左侧、垂直方向有重叠的元素中右边缘最大的（最近的）
+        let leftNeighborRight = -Infinity;
+        for (const el of otherElements) {
+          const elRight = el.x + el.width;
+          if (elRight <= minX + 0.01 && el.y < maxY - 0.01 && el.y + el.height > minY + 0.01) {
+            leftNeighborRight = Math.max(leftNeighborRight, elRight);
+          }
+        }
+        // 右边：找在选中组右侧、垂直方向有重叠的元素中左边缘最小的（最近的）
+        let rightNeighborLeft = Infinity;
+        for (const el of otherElements) {
+          if (el.x >= maxX - 0.01 && el.y < maxY - 0.01 && el.y + el.height > minY + 0.01) {
+            rightNeighborLeft = Math.min(rightNeighborLeft, el.x);
+          }
+        }
+        // 上边：找在选中组上方、水平方向有重叠的元素中下边缘最大的（最近的）
+        let topNeighborBottom = -Infinity;
+        for (const el of otherElements) {
+          const elBottom = el.y + el.height;
+          if (elBottom <= minY + 0.01 && el.x < maxX - 0.01 && el.x + el.width > minX + 0.01) {
+            topNeighborBottom = Math.max(topNeighborBottom, elBottom);
+          }
+        }
+        // 下边：找在选中组下方、水平方向有重叠的元素中上边缘最小的（最近的）
+        let bottomNeighborTop = Infinity;
+        for (const el of otherElements) {
+          if (el.y >= maxY - 0.01 && el.x < maxX - 0.01 && el.x + el.width > minX + 0.01) {
+            bottomNeighborTop = Math.min(bottomNeighborTop, el.y);
+          }
+        }
+
+        // 确定每个方向的距离和辅助线终点：有相邻元素用元素间距，否则用页边距离
+        const hasLeftNeighbor = leftNeighborRight > -Infinity;
+        const hasRightNeighbor = rightNeighborLeft < Infinity;
+        const hasTopNeighbor = topNeighborBottom > -Infinity;
+        const hasBottomNeighbor = bottomNeighborTop < Infinity;
+
+        const leftDist = hasLeftNeighbor ? minX - leftNeighborRight : minX;
+        const rightDist = hasRightNeighbor ? rightNeighborLeft - maxX : this.format.width - maxX;
+        const topDist = hasTopNeighbor ? minY - topNeighborBottom : minY;
+        const bottomDist = hasBottomNeighbor ? bottomNeighborTop - maxY : this.format.height - maxY;
+
+        // 边界距离基于整个选中组（多选时显示整体边界距离）
+        this.onBoundaryDistance?.({
+          left: Math.round(leftDist * 10) / 10,
+          right: Math.round(rightDist * 10) / 10,
+          top: Math.round(topDist * 10) / 10,
+          bottom: Math.round(bottomDist * 10) / 10,
+          x: minX,
+          y: minY,
+          width: maxX - minX,
+          height: maxY - minY,
+          leftTargetX: hasLeftNeighbor ? leftNeighborRight : 0,
+          rightTargetX: hasRightNeighbor ? rightNeighborLeft : this.format.width,
+          topTargetY: hasTopNeighbor ? topNeighborBottom : 0,
+          bottomTargetY: hasBottomNeighbor ? bottomNeighborTop : this.format.height,
         });
+
+        // 移动所有选中元素（多选整体移动）
+        for (const el of this.dragStartElements) {
+          this.onElementChange?.(el.id, {
+            x: el.x + deltaX,
+            y: el.y + deltaY,
+          });
+        }
       }
     } else if (this.mode === 'resize' && this.activeHandle) {
       this.handleResize(x, y, e.shiftKey);
@@ -562,12 +721,37 @@ export class InteractionManager {
     // 通知渲染层画辅助线
     this.onAlignGuides?.(guides);
 
+    // 页面边界限制：缩放时元素不能超出页面
+    if (finalNx < 0) {
+      nw += finalNx; // 宽度减少
+      finalNx = 0;
+    }
+    if (finalNx + nw > this.format.width) {
+      nw = this.format.width - finalNx;
+    }
+    if (finalNy < 0) {
+      nh += finalNy; // 高度减少
+      finalNy = 0;
+    }
+    if (finalNy + nh > this.format.height) {
+      nh = this.format.height - finalNy;
+    }
+
+    // 最小尺寸限制
+    nw = Math.max(5, nw);
+    nh = Math.max(5, nh);
+
     this.onElementChange?.(el.id, { x: finalNx, y: finalNy, width: nw, height: nh });
   }
 
   private handleMouseUp = () => {
+    // 没有进行中的拖拽/缩放/旋转时，不处理
+    if (this.mode === 'none') return;
+
     // 清除辅助线
     this.onAlignGuides?.({ vertical: [], horizontal: [] });
+    // 清除边界距离显示
+    this.onBoundaryDistance?.(null);
 
     // 如果拖拽到了另一个图片上，触发调换位置
     if (this.mode === 'drag' && this.hoverTargetId && this.startElement) {
@@ -626,6 +810,7 @@ export class InteractionManager {
     this.canvas.removeEventListener('mousedown', this.handleMouseDown);
     this.canvas.removeEventListener('mousemove', this.handleMouseMove);
     this.canvas.removeEventListener('mouseup', this.handleMouseUp);
+    window.removeEventListener('mouseup', this.handleMouseUp);
     this.canvas.removeEventListener('wheel', this.handleWheel);
     this.canvas.removeEventListener('dblclick', this.handleDblClick);
   }

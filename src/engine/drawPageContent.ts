@@ -1,4 +1,4 @@
-import type { Page, Element, BookFormat, ImageElement, TextElement, StickerElement } from '@/types';
+import type { Page, Element, BookFormat, ImageElement, TextElement, StickerElement, ShapeElement } from '@/types';
 import { mmToPx } from '@/utils/units';
 import { computeCoverCrop } from '@/utils/image';
 
@@ -103,6 +103,8 @@ function drawElement(
     drawTextElement(ctx, el, dpi);
   } else if (el.type === 'sticker') {
     drawStickerElement(ctx, el, dpi, assets);
+  } else if (el.type === 'shape') {
+    drawShapeElement(ctx, el, dpi);
   }
 
   ctx.restore();
@@ -134,6 +136,51 @@ function drawImageElement(
     ctx.textAlign = 'center';
     ctx.fillText('图片加载中...', x + w / 2, y + h / 2);
   }
+}
+
+/** 绘制形状/选区元素 */
+function drawShapeElement(ctx: CanvasRenderingContext2D, el: ShapeElement, dpi: number) {
+  const x = mmToPx(el.x, dpi);
+  const y = mmToPx(el.y, dpi);
+  const w = mmToPx(el.width, dpi);
+  const h = mmToPx(el.height, dpi);
+  const radius = el.borderRadius ? mmToPx(el.borderRadius, dpi) : 0;
+
+  ctx.save();
+  ctx.globalAlpha = el.opacity ?? 1;
+
+  // 绘制圆角矩形路径
+  if (radius > 0) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  } else {
+    ctx.beginPath(); // 必须开始新路径，否则会累积前面元素的路径，导致fill填充所有矩形
+    ctx.rect(x, y, w, h);
+  }
+
+  // 填充背景色
+  if (el.backgroundColor) {
+    ctx.fillStyle = el.backgroundColor;
+    ctx.fill();
+  }
+
+  // 绘制边框
+  if (el.borderColor && el.borderWidth && el.borderWidth > 0) {
+    ctx.strokeStyle = el.borderColor;
+    ctx.lineWidth = mmToPx(el.borderWidth, dpi);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
 /** 绘制文字元素（自动换行） */

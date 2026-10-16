@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from '
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch, store } from '@/store';
 import { setCurrentProject, addElement, updateElement, deleteElement, addPage, deletePage, updateProjectName, reorderPages, swapImages, pushHistory, undo, setBodyStyle } from '@/store/projectSlice';
-import { selectElement, clearSelection, setZoom, setPan, resetZoom, resetEditor, setCurrentPage as setCurrentPageAction } from '@/store/editorSlice';
+import { selectElement, multiSelectElement, clearSelection, setZoom, setPan, resetZoom, resetEditor, setCurrentPage as setCurrentPageAction } from '@/store/editorSlice';
 import { setMode } from '@/store/uiSlice';
 import { getProject } from '@/utils/storage';
 import { saveImageAsset, getImageAsset } from '@/utils/assetStore';
@@ -148,7 +148,11 @@ export default function Editor() {
     interactionRef.current = interaction;
 
     interaction.onSelect = (id, multi) => {
-      dispatch(selectElement(id));
+      if (multi) {
+        dispatch(multiSelectElement(id));
+      } else {
+        dispatch(selectElement(id));
+      }
     };
     interaction.onClearSelection = () => {
       dispatch(clearSelection());
@@ -177,6 +181,9 @@ export default function Editor() {
     };
     interaction.onAlignGuides = (guides) => {
       rendererRef.current?.setAlignGuides(guides);
+    };
+    interaction.onBoundaryDistance = (dist) => {
+      rendererRef.current?.setBoundaryDistance(dist);
     };
     interaction.onDragStart = () => {
       dispatch(pushHistory());
@@ -618,11 +625,19 @@ export default function Editor() {
               <button
                 key={tab}
                 onClick={() => setLeftTab(tab)}
-                className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+                className={`relative flex-1 py-2.5 text-xs font-medium transition-colors group ${
                   leftTab === tab ? 'text-amber-700 border-b-2 border-amber-700' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 {tab === 'pages' ? '页面' : '模板'}
+                {/* 模板页签悬停提示气泡 */}
+                {tab === 'templates' && (
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-52 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 pointer-events-none shadow-xl leading-relaxed text-left">
+                    切换模板时，当前页已编辑好的文案会被覆盖，请先保存文案，再切换模板
+                    {/* 气泡小箭头 */}
+                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-800 rotate-45"></div>
+                  </div>
+                )}
               </button>
             ))}
           </div>
