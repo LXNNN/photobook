@@ -115,7 +115,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   },
   {
     id: 'ending-page',
-    name: '结尾寄语',
+    name: '尾页1',
     category: '尾页',
     description: '全幅大图+居中寄语，适合做尾页',
     thumbnail: 'ending-page',
@@ -128,7 +128,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   },
   {
     id: 'ending-minimal',
-    name: '页尾（未完待续）',
+    name: '尾页2',
     category: '尾页',
     description: '居中方形照片+未完待续+年份，简约文艺尾页',
     thumbnail: 'ending-minimal',

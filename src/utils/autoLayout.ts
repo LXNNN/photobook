@@ -19,6 +19,8 @@ import { spreadGroups } from '@/utils/spread';
  * - 九宫格在照片超过 45 张时启用，固定放正文最后那一对，和一张满版图配对
  * - 照片按横竖比例分配图位，画面分量高的照片进大图位
  * - 模板整本轮换：同一对、相邻页不重复
+ * - 禁组排除：FORBIDDEN_SPREAD_PAIRS 里的模板组合不会出现在同一个跨页上
+ * - 疏密配比：同一对的两页尽量一页留白多、一页留白少（差 ≥10 个百分点，软约束）
  *
  * 页面节奏不再固定「多图页 + 单图页」，而是先按「一对」规划：
  * 每一对 = 跨页左右两页（或封面/尾页旁边的落单页），先定照片总数再拆成两页。
@@ -64,6 +66,8 @@ const NINE_GRID_COUNT = 10;
 const NINE_GRID_MIN_PHOTOS = 45;
 /** 一对跨页左右加起来最多几张（九宫格那一对除外） */
 const MAX_PHOTOS_PER_SPREAD = 8;
+/** 同一跨页两页留白率的最小差距（10 个百分点），达不到就算了（软约束） */
+const MIN_SPREAD_CONTRAST = 0.1;
 /**
  * 规划页数时平均一页想放几张。
  * 2.5 是折中：比旧的「一页多图 + 一页满版」（约 2 张/页）紧凑一点，
@@ -85,6 +89,15 @@ const AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS = new Set<string>([
   'four-magazine',       // 四图杂志风（本来就不参与）
   'five-collage',        // 五图拼贴
 ]);
+
+/**
+ * 左右双页不能同时出现的模板组合（2026-10-17 她说这两组放在同一个跨页上不好看）。
+ * 只约束同一对里的两页，不影响前后页；改模板时记得和 TEMPLATES_BY_COUNT 里的中文名核对。
+ */
+const FORBIDDEN_SPREAD_PAIRS: ReadonlyArray<readonly [string, string]> = [
+  ['three-collage', 'three-title-top'],     // 三图拼贴 + 三图顶标题底正文
+  ['two-images-slanted', 'six-grid-slow'],  // 双图留白 + 六图慢递
+];
 
 /**
  * 每个图片数量对应的模板列表 —— 键必须和模板真实的图位数量一致。
@@ -434,19 +447,15 @@ function planContentPages(
   return planned;
 }
 
-/**
- * 按「整本用得最少」挑模板：
- * - 同一对里不重复（两张图数一样时尤其重要）
- * - 不和上一页重复
- * - 同等条件下随机，保证每次生成不完全一样
- */
-function pickTemplate(
-  count: number,
-  usedInUnit: Set<string>,
-  lastTemplateId: string | undefined,
-  usage: Map<string, number>,
-  allowFullImage = true
-): TemplateDefinition {
+/** 这个模板和同一对里已经选好的模板，是不是 FORBIDDEN_SPREAD_PAIRS 里的禁组 */
+function formsForbiddenPair(id: string, usedInUnit: Set<string>): boolean {
+  return FORBIDDEN_SPREAD_PAIRS.some(
+    ([a, b]) => (a === id && usedInUnit.has(b)) || (b === id && usedInUnit.has(a))
+  );
+}
+
+/** 某页可选的模板（含满版图限制），选模板和「看一步」共用同一份 */
+function getPageCandidates(count: number, allowFullImage: boolean): TemplateDefinition[] {
   const all = getTemplateCandidates(count);
   // 满版图没有文案，单独一页会显得空：只能配 ≥4 张照片的另一页。
   // 1+1 / 1+2 / 1+3 这种小跨页改用带文字的「一图」模板。
@@ -454,10 +463,34 @@ function pickTemplate(
   if (candidates.length === 0) {
     throw new Error(`没有可用的 ${count} 图模板`);
   }
+  return candidates;
+}
 
+/**
+ * 模板的留白率（0-1）：图片和文字元素占的面积之外的部分。
+ * 元素都是相对坐标，直接加面积就行，跟开本无关；用于「一页疏、一页密」的配比。
+ */
+function whitespaceRatio(template: TemplateDefinition): number {
+  let content = 0;
+  for (const el of template.elements) {
+    if (el.type === 'image' || el.type === 'text') {
+      content += el.width * el.height;
+    }
+  }
+  return 1 - content;
+}
+
+/**
+ * 落单页（封面/尾页旁边没有配对的页）按「整本用得最少」挑模板：
+ * - 不和上一页重复
+ * - 同等条件下随机，保证每次生成不完全一样
+ */
+function pickTemplate(
+  candidates: TemplateDefinition[],
+  lastTemplateId: string | undefined,
+  usage: Map<string, number>
+): TemplateDefinition {
   const filters: ((template: TemplateDefinition) => boolean)[] = [
-    (template) => !usedInUnit.has(template.id) && template.id !== lastTemplateId,
-    (template) => !usedInUnit.has(template.id),
     (template) => template.id !== lastTemplateId,
     () => true,
   ];
@@ -476,6 +509,70 @@ function pickTemplate(
   const chosen = randomPick(leastUsed);
   usage.set(chosen.id, (usage.get(chosen.id) ?? 0) + 1);
   return chosen;
+}
+
+/**
+ * 一对跨页的两页一起挑模板（2026-10-17 她要「一页疏、一页密」的配比）：
+ * - 硬约束（逐级放松）：同一对里不重复 → 左页不撞上一跨页的右页 → 最后才放禁组
+ * - 软约束：两页留白率差 ≥ MIN_SPREAD_CONTRAST 的组合优先，拉不开就全部参与
+ * - 多样性：整本用得最少的组合里随机挑一对
+ *
+ * 只挑模板、不动 usage 计数，由调用方统一加。
+ */
+function pickTemplatePair(
+  candidatesA: TemplateDefinition[],
+  candidatesB: TemplateDefinition[],
+  lastTemplateId: string | undefined,
+  usage: Map<string, number>
+): [TemplateDefinition, TemplateDefinition] {
+  const pairs: Array<[TemplateDefinition, TemplateDefinition]> = [];
+  for (const a of candidatesA) {
+    for (const b of candidatesB) {
+      if (a.id === b.id) continue;
+      if (formsForbiddenPair(a.id, new Set([b.id]))) continue;
+      pairs.push([a, b]);
+    }
+  }
+  // 理论上到不了这里（目前没有任何一对的两页都只有一个且相同的候选）；
+  // 保险起见按「重复 > 禁组」的顺序放松，跟旧逻辑的优先级一致
+  if (pairs.length === 0) {
+    for (const a of candidatesA) {
+      for (const b of candidatesB) {
+        if (!formsForbiddenPair(a.id, new Set([b.id]))) pairs.push([a, b]);
+      }
+    }
+  }
+  if (pairs.length === 0) {
+    for (const a of candidatesA) {
+      for (const b of candidatesB) {
+        pairs.push([a, b]);
+      }
+    }
+  }
+
+  const filters: Array<(pair: [TemplateDefinition, TemplateDefinition]) => boolean> = [
+    ([a]) => a.id !== lastTemplateId,
+    () => true,
+  ];
+  let pool = pairs;
+  for (const filter of filters) {
+    const filtered = pairs.filter(filter);
+    if (filtered.length > 0) {
+      pool = filtered;
+      break;
+    }
+  }
+
+  // 软约束：留白差 ≥ 10 个百分点的组合优先；一个都没有就全都要（尽力就行）
+  const contrast = pool.filter(
+    ([a, b]) => Math.abs(whitespaceRatio(a) - whitespaceRatio(b)) >= MIN_SPREAD_CONTRAST
+  );
+  if (contrast.length > 0) pool = contrast;
+
+  const scores = pool.map(([a, b]) => (usage.get(a.id) ?? 0) + (usage.get(b.id) ?? 0));
+  const minScore = Math.min(...scores);
+  const best = pool.filter((_, index) => scores[index] === minScore);
+  return randomPick(best);
 }
 
 /** cover 模式下这张照片放进这个图位要裁掉多少（0 = 一点都不用裁） */
@@ -618,58 +715,86 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
 
   if (plan) {
     const usage = new Map<string, number>();
-    const unitTemplates = new Map<number, Set<string>>();
     let lastTemplateId: string | undefined;
     let photoIndex = 0;
 
     // 同一对里另一页放几张，用来判断满版图能不能用
     const countsByUnit = new Map<number, number[]>();
+    const entriesByUnit = new Map<number, PlannedPageCount[]>();
     for (const planned of plan) {
       const counts = countsByUnit.get(planned.unit) ?? [];
       counts.push(planned.count);
       countsByUnit.set(planned.unit, counts);
+      const entries = entriesByUnit.get(planned.unit) ?? [];
+      entries.push(planned);
+      entriesByUnit.set(planned.unit, entries);
     }
 
+    // 每页的候选模板提前算好，同一对的两页一起选模板时用同一份
+    const entryCandidates = new Map<PlannedPageCount, TemplateDefinition[]>();
     for (const planned of plan) {
-      const pagePhotos = photos.slice(photoIndex, photoIndex + planned.count);
-      photoIndex += planned.count;
-
-      // 只有 1 张照片的页面：另一页有 ≥4 张才允许用满版图（满版没有文案，
-      // 小跨页里会显得空）；落单页旁边是封面/尾页，不受这个限制
       const unitCounts = countsByUnit.get(planned.unit) ?? [];
       let siblingCount: number | null = null;
       if (unitCounts.length === 2) {
         siblingCount = planned.count === unitCounts[0] ? unitCounts[1] : unitCounts[0];
       }
+      // 只有 1 张照片的页面：另一页有 ≥4 张才允许用满版图（满版没有文案，
+      // 小跨页里会显得空）；落单页旁边是封面/尾页，不受这个限制
       const allowFullImage = planned.count !== 1 || siblingCount === null || siblingCount >= 4;
+      entryCandidates.set(planned, getPageCandidates(planned.count, allowFullImage));
+    }
 
-      const usedInUnit = unitTemplates.get(planned.unit) ?? new Set<string>();
-      // 九宫格那一对的单图页固定配满版图，不参与轮换
-      const forcedFullImage = planned.forceFullImage
-        ? getTemplateCandidates(planned.count).find((t) => t.id === 'full-image-bordered')
-        : undefined;
-      const template =
-        forcedFullImage ??
-        pickTemplate(planned.count, usedInUnit, lastTemplateId, usage, allowFullImage);
-      if (forcedFullImage) {
-        usage.set(forcedFullImage.id, (usage.get(forcedFullImage.id) ?? 0) + 1);
-      }
-      usedInUnit.add(template.id);
-      unitTemplates.set(planned.unit, usedInUnit);
-
+    const makePage = (template: TemplateDefinition, pagePhotos: AutoPhoto[]): Page => {
       const orderedIds = orderPhotosForTemplate(template, pagePhotos, format);
       const elements = applyTemplate(template, format, orderedIds, themeId, bodyFontSize);
-
       // 满版图没有文字元素，这一步对它自然是空操作；带文案的单图模板要填
       fillTextElements(elements, theme, used, format);
-
-      pages.push({
+      return {
         id: generateId(),
         background: { type: 'color', value: '#ffffff' },
         elements,
         templateId: template.id,
-      });
-      lastTemplateId = template.id;
+      };
+    };
+
+    // 按「一对」为单位推进：同一对的两页一起挑模板（一疏一密），
+    // 落单页（封面/尾页旁边）没有配对，走单页规则
+    for (const unitEntries of entriesByUnit.values()) {
+      const [entryA, entryB] = unitEntries;
+
+      if (!entryB) {
+        const pagePhotos = photos.slice(photoIndex, photoIndex + entryA.count);
+        photoIndex += entryA.count;
+        const template = pickTemplate(entryCandidates.get(entryA)!, lastTemplateId, usage);
+        pages.push(makePage(template, pagePhotos));
+        lastTemplateId = template.id;
+        continue;
+      }
+
+      const pagePhotosA = photos.slice(photoIndex, photoIndex + entryA.count);
+      photoIndex += entryA.count;
+      const pagePhotosB = photos.slice(photoIndex, photoIndex + entryB.count);
+      photoIndex += entryB.count;
+
+      // 九宫格那一对的单图页固定配满版图，不参与轮换
+      const forcedA = entryA.forceFullImage
+        ? getTemplateCandidates(entryA.count).find((t) => t.id === 'full-image-bordered')
+        : undefined;
+      const forcedB = entryB.forceFullImage
+        ? getTemplateCandidates(entryB.count).find((t) => t.id === 'full-image-bordered')
+        : undefined;
+      const [templateA, templateB] = pickTemplatePair(
+        forcedA ? [forcedA] : entryCandidates.get(entryA)!,
+        forcedB ? [forcedB] : entryCandidates.get(entryB)!,
+        lastTemplateId,
+        usage
+      );
+      usage.set(templateA.id, (usage.get(templateA.id) ?? 0) + 1);
+      usage.set(templateB.id, (usage.get(templateB.id) ?? 0) + 1);
+
+      pages.push(makePage(templateA, pagePhotosA));
+      pages.push(makePage(templateB, pagePhotosB));
+      lastTemplateId = templateB.id;
     }
   } else if (photos.length > 0) {
     // 只有 1 张照片：凑不出一对，放一页满版；页数奇偶最后统一兜底
@@ -686,7 +811,7 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
   // ========== 3. 结尾页（逻辑不变） ==========
   if (includeEnding && pages.length > 0) {
     const lastImageId = photos.length > 0 ? photos[photos.length - 1].id : '';
-    pages.push(createEndingPage(theme, format, lastImageId));
+    pages.push(createEndingPage(format, lastImageId));
   }
 
   // 确保至少有一页
@@ -755,37 +880,18 @@ function createCoverPage(projectName: string, format: BookFormat, imageId: strin
 }
 
 /**
- * 创建结尾页（杂志风格）
+ * 创建结尾页：尾页2（原「页尾（未完待续）」）——居中照片 + 未完待续 + 年份。
+ * 年份占位符 {year} 由 applyTemplate 替换成当前年份，文字保持模板原样。
  */
-function createEndingPage(theme: Theme, format: BookFormat, lastImageId?: string): Page {
-  // 用结尾寄语模板
-  const template = TEMPLATES.find((t) => t.id === 'ending-page')!;
-  const templateElements = applyTemplate(template, format, lastImageId ? [lastImageId] : []);
-
-  // 填充结尾文案
-  for (const el of templateElements) {
-    if (el.type === 'text') {
-      const textEl = el as TextElement;
-      // 大标题
-      if (textEl.fontSize > format.width * 0.05 * 2.83) {
-        textEl.content = randomPick(['未完待续', 'THANK YOU', '下一站', 'THE END', '继续前行']);
-      }
-      // 正文
-      else if (textEl.fontSize > format.width * 0.025 * 2.83) {
-        textEl.content = randomPick(theme.endings);
-      }
-      // 底部英文小字
-      else {
-        textEl.content = randomPick(['SEE YOU', 'THANKS FOR WATCHING', 'FIN', 'TO BE CONTINUED']);
-      }
-    }
-  }
+function createEndingPage(format: BookFormat, lastImageId?: string): Page {
+  const template = TEMPLATES.find((t) => t.id === 'ending-minimal')!;
+  const elements = applyTemplate(template, format, lastImageId ? [lastImageId] : []);
 
   return {
     id: generateId(),
     background: { type: 'color', value: '#faf8f5' },
-    elements: templateElements,
-    templateId: 'ending-page',
+    elements,
+    templateId: 'ending-minimal',
   };
 }
 

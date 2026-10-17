@@ -19,7 +19,7 @@ export interface Theme {
   paragraphs: string[];
   /** 短正文文案模板（一行短句，用于空间小的正文区域） */
   shortParagraphs: string[];
-  /** 结尾寄语模板 */
+  /** 尾页寄语文案（旧「结尾寄语」尾页用过；智能生成已改用尾页2，此字段暂未使用） */
   endings: string[];
 }
 

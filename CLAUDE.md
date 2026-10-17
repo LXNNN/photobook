@@ -78,7 +78,7 @@ npm run preview   # 预览构建产物
 - 单图页有四个模板参与轮换：满版（`full-image-bordered`）、上图下文、上文下图、左图右文。**满版图必须和 ≥4 张照片的另一页配对**（满版没有文案，小跨页里会显得空）；1+1 / 1+2 / 1+3 时该页改用带文字的三个单图模板。落单页旁边是封面/尾页，不受这条限制
 - 6 图模板在 ≥12 张时随机挑一对排 `[6,1]` / `[6,2]`（选页数时按 7 张给它预留容量，分配时那一对的下限也钉在 7，免得被前面的页吃光），一本最多一页
 - 图位分配 `orderPhotosForTemplate`：按图位面积从大到小贪心，`cropLoss` 衡量横竖裁切；最大图位有 `0.18 × weight` 的主角加成，但形状差太多时会让位（形状合适时 100% 进主角位，不合适时不硬塞）
-- 模板整本轮换：`usage` 计整本使用次数，`usedInUnit` 保证同一对不重复，`lastTemplateId` 避开上一页。同一对里两张 `full-image-bordered` 允许重复（满版单图并排是正常节奏）
+- 模板整本轮换：`usage` 计整本使用次数、`lastTemplateId` 避开上一页。**同一对的两页一起挑**（`pickTemplatePair`）：先硬约束（同一对不重复 → 左页不撞上一跨页的右页 → 最后才放禁组），再软约束「一页疏、一页密」——两页留白率差 ≥ `MIN_SPREAD_CONTRAST`（10 个百分点）的组合优先，拉不开就全部参与；留白率由 `whitespaceRatio` 按模板元素面积现算，不手写名单。最后整本用得最少的组合里随机挑一对（多样性）。禁组名单 `FORBIDDEN_SPREAD_PAIRS`（三图拼贴+三图顶标题底正文、双图留白+六图慢递）永不出现在同一跨页，四个模板本身照常参与。落单页（封面/尾页旁边）走单页规则 `pickTemplate`
 - `fillTextElements` 认 `body` / `shortBody` / 标题线；`shortBody` 只给 `five-collage-whitespace` 那种小文字框取一行短句。`applyTemplate` 必须把 `shortBody` 写进 `TextElement`，否则会被长正文顶出框
 - 总页数永远是偶数（封面/结尾的奇偶一起算），落单页上限 `MAX_LONE_COUNT = 5`，保证结尾页不会和前一页挤进同一个跨页
 
