@@ -10,11 +10,13 @@ import { spreadGroups } from '@/utils/spread';
  *
  * 2026-10-17 按她的要求重写：
  * - 封面页逻辑不变
- * - 一对跨页（左右两页）照片总数最多 8 张；九宫格除外，且九宫格必须和单图页配对
+ * - 一对跨页（左右两页）照片总数最多 8 张
  * - 单图页有四个模板参与轮换（满版、上图下文、上文下图、左图右文）；
  *   满版图没有文案填充，必须和 ≥4 张照片的页面配对，避免整个跨页太空
- * - 6 图模板加入轮换；九宫格 30 张照片以上才启用，一本最多一次
- * - 四图杂志风不参与智能排版，只在模板面板里供手动选用
+ * - 6 图模板加入轮换
+ * - 比较满的排版（三图错落、四图网格、四图杂志风、五图拼贴、双图横板）
+ *   暂时不参与智能排版，只在模板面板里供手动选用（名单见 AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS）
+ * - 九宫格在照片超过 45 张时启用，固定放正文最后那一对，和一张满版图配对
  * - 照片按横竖比例分配图位，画面分量高的照片进大图位
  * - 模板整本轮换：同一对、相邻页不重复
  *
@@ -58,8 +60,8 @@ const MAX_NORMAL_COUNT = 6;
 const MAX_LONE_COUNT = 5;
 /** 九宫格模板的张数（1 张头像 + 9 格） */
 const NINE_GRID_COUNT = 10;
-/** 九宫格至少这么多张照片才启用，一本最多一次 */
-const NINE_GRID_MIN_PHOTOS = 30;
+/** 照片超过这个数（>45，即 46 张起）才启用九宫格，一本最多一次 */
+const NINE_GRID_MIN_PHOTOS = 45;
 /** 一对跨页左右加起来最多几张（九宫格那一对除外） */
 const MAX_PHOTOS_PER_SPREAD = 8;
 /**
@@ -72,9 +74,24 @@ const TARGET_PHOTOS_PER_PAGE = 2.5;
 const SIX_GRID_MIN_PHOTOS = 12;
 
 /**
+ * 暂时不参与智能排版的模板 —— 统一放这一份名单，只在模板面板里手动选用，
+ * 之后另有设计计划。想重新启用某款：从这里删掉对应 id 即可。
+ * 九宫格已从名单里移出（>40 张时启用、放正文最后一对、配满版图）；
+ * 若以后想再停用，把它加回来，连带的「10+1 特殊配对」也会一起跳过（见 planContentPages）。
+ */
+const AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS = new Set<string>([
+  'two-images-stack',    // 双图横板
+  'three-collage-v2',    // 三图错落
+  'four-grid',           // 四图网格
+  'four-magazine',       // 四图杂志风（本来就不参与）
+  'five-collage',        // 五图拼贴
+]);
+
+/**
  * 每个图片数量对应的模板列表 —— 键必须和模板真实的图位数量一致。
  * 用别的张数（7、8、9）会找不到模板；getTemplateCandidates 还会再按
  * 模板里真实的 image 元素数量核一遍，防止列表和模板对不上时丢照片。
+ * 在这里保留全部模板的映射，实际候选由 AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS 过滤。
  */
 const TEMPLATES_BY_COUNT: Record<number, string[]> = {
   1: [
@@ -101,7 +118,7 @@ const TEMPLATES_BY_COUNT: Record<number, string[]> = {
     'four-left3-right1',   // 四图三小一大
     'four-grid-whitespace', // 四图留白
     'four-literary',       // 四图文艺排版
-    // 四图杂志风（four-magazine）不参与智能排版，只在模板面板里供手动选用
+    'four-magazine',       // 四图杂志风（已在上面名单里停用）
   ],
   5: [
     'five-collage',        // 五图拼贴
@@ -125,6 +142,7 @@ function imageSlotCount(template: TemplateDefinition): number {
 function getTemplateCandidates(count: number): TemplateDefinition[] {
   const ids = TEMPLATES_BY_COUNT[count] ?? [];
   return ids
+    .filter((id) => !AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS.has(id))
     .map((id) => TEMPLATES.find((t) => t.id === id))
     .filter((t): t is TemplateDefinition => t !== undefined && imageSlotCount(t) === count);
 }
@@ -256,13 +274,16 @@ interface PlannedPageCount {
   count: number;
   /** 同一对（跨页）里的页面共用一个 unit，用来避免一对里出现同一个模板 */
   unit: number;
+  /** 这一页固定用满版图模板（九宫格那一对的配对页） */
+  forceFullImage?: boolean;
 }
 
 /**
  * 规划正文每页放几张照片。
  *
  * 流程：
- * 1. 先看要不要安排九宫格（≥30 张，一本一次），它固定占一对（10 张 + 1 张）
+ * 1. 先看要不要安排九宫格（>45 张，一本一次），它固定占正文最后那一对
+ *    （10 张 + 1 张满版图）；九宫格在 AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS 里时这条规则整个跳过
  * 2. 按目标密度定正文页数，并把页面按 spreadGroups 配成一对一对
  * 3. 相册 ≥12 张时，挑一对固定放一张 6 图页（6+1 或 6+2），保证 6 图模板能轮到
  * 4. 其余每一对在「两张之和 2~8」的前提下分配张数，最后算出每页张数
@@ -272,10 +293,12 @@ function planContentPages(
   includeCover: boolean,
   includeEnding: boolean
 ): PlannedPageCount[] | null {
-  // ===== 1. 选页数（含九宫格）=====
+  // ===== 1. 选页数（九宫格 >45 张时安排）=====
+  // 九宫格若被放回暂停名单，它的「10+1 特殊配对」也一起跳过
+  const nineGridEnabled = !AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS.has('nine-grid-avatar');
   let useNineGrid = false;
   let basePageCount = -1;
-  if (photoCount >= NINE_GRID_MIN_PHOTOS) {
+  if (nineGridEnabled && photoCount > NINE_GRID_MIN_PHOTOS) {
     const restCount = chooseContentPageCount(
       photoCount - NINE_GRID_COUNT - 1,
       includeCover,
@@ -302,9 +325,8 @@ function planContentPages(
     .filter((index) => index >= 0);
 
   // ===== 2. 固定张数的特殊页 =====
-  const nineGridUnit = useNineGrid
-    ? pairUnits[Math.floor(Math.random() * pairUnits.length)]
-    : -1;
+  // 九宫格固定放在正文最后一对（相册靠后的位置），另一页固定用满版图配对
+  const nineGridUnit = useNineGrid ? pairUnits[pairUnits.length - 1] : -1;
 
   // 6 图页：随机挑一对（避开九宫格），固定成 6+1 或 6+2。
   // 位置随机而不是永远放第一对 —— 否则每本相册的六图页都在最前面，翻两本就看出规律了。
@@ -401,7 +423,14 @@ function planContentPages(
 
   const planned: PlannedPageCount[] = [];
   unitCounts.forEach((counts, unit) => {
-    counts.forEach((count) => planned.push({ count, unit }));
+    counts.forEach((count) => {
+      planned.push({
+        count,
+        unit,
+        // 九宫格那一对里的单图页固定用满版图配对
+        forceFullImage: unit === nineGridUnit && count === 1,
+      });
+    });
   });
   return planned;
 }
@@ -616,13 +645,16 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
       const allowFullImage = planned.count !== 1 || siblingCount === null || siblingCount >= 4;
 
       const usedInUnit = unitTemplates.get(planned.unit) ?? new Set<string>();
-      const template = pickTemplate(
-        planned.count,
-        usedInUnit,
-        lastTemplateId,
-        usage,
-        allowFullImage
-      );
+      // 九宫格那一对的单图页固定配满版图，不参与轮换
+      const forcedFullImage = planned.forceFullImage
+        ? getTemplateCandidates(planned.count).find((t) => t.id === 'full-image-bordered')
+        : undefined;
+      const template =
+        forcedFullImage ??
+        pickTemplate(planned.count, usedInUnit, lastTemplateId, usage, allowFullImage);
+      if (forcedFullImage) {
+        usage.set(forcedFullImage.id, (usage.get(forcedFullImage.id) ?? 0) + 1);
+      }
       usedInUnit.add(template.id);
       unitTemplates.set(planned.unit, usedInUnit);
 

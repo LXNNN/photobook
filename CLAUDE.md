@@ -72,9 +72,11 @@ npm run preview   # 预览构建产物
 ### 智能排版（src/utils/autoLayout.ts + utils/photoAnalysis.ts）
 
 - 创建页「✨ 开始生成」走 `autoGenerateAlbum({ photos })`。照片先转成 `AutoPhoto`（宽高 + `weight` 画面分量），`weight` 由 `photoAnalysis.analyzePhotoWeight` 读 200px 缩略图在本地算（对比度 / 边缘密度 / 饱和度），只活在内存、不落盘，照片不出电脑
-- **按跨页成对规划**：正文页先复用 `spreadGroups()` 配成 `[1,2]`、`[3,4]`…，每对照片总数最多 `MAX_PHOTOS_PER_SPREAD = 8`（没有下限，小相册 1+1、2+2 都允许）。九宫格那一对固定 `[10,1]` 是唯一例外——九宫格要 ≥30 张才启用、一本最多一次
+- **暂时不参与智能排版的模板**（只在模板面板手动选用，之后另有设计计划）：双图横板 `two-images-stack`、三图错落 `three-collage-v2`、四图网格 `four-grid`、四图杂志风 `four-magazine`、五图拼贴 `five-collage`。名单统一在 `autoLayout.ts` 的 `AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS`，想启用某款从名单删掉即可
+- **九宫格**：照片 >45 张（46 张起）才启用、一本最多一次，固定放正文最后一对；另一页固定配满版图 `full-image-bordered`（不参与模板轮换，规划时用 `PlannedPageCount.forceFullImage` 标记）。若把 `nine-grid-avatar` 放回暂停名单，这条规则整个跳过
+- **按跨页成对规划**：正文页先复用 `spreadGroups()` 配成 `[1,2]`、`[3,4]`…，每对照片总数最多 `MAX_PHOTOS_PER_SPREAD = 8`（没有下限，小相册 1+1、2+2 都允许）
 - 单图页有四个模板参与轮换：满版（`full-image-bordered`）、上图下文、上文下图、左图右文。**满版图必须和 ≥4 张照片的另一页配对**（满版没有文案，小跨页里会显得空）；1+1 / 1+2 / 1+3 时该页改用带文字的三个单图模板。落单页旁边是封面/尾页，不受这条限制
-- 6 图模板在 ≥12 张时随机挑一对排 `[6,1]` / `[6,2]`（选页数时按 7 张给它预留容量，分配时那一对的下限也钉在 7，免得被前面的页吃光），一本最多一页；四图的 `four-magazine` **不参与智能排版**，只在模板面板供手动选用
+- 6 图模板在 ≥12 张时随机挑一对排 `[6,1]` / `[6,2]`（选页数时按 7 张给它预留容量，分配时那一对的下限也钉在 7，免得被前面的页吃光），一本最多一页
 - 图位分配 `orderPhotosForTemplate`：按图位面积从大到小贪心，`cropLoss` 衡量横竖裁切；最大图位有 `0.18 × weight` 的主角加成，但形状差太多时会让位（形状合适时 100% 进主角位，不合适时不硬塞）
 - 模板整本轮换：`usage` 计整本使用次数，`usedInUnit` 保证同一对不重复，`lastTemplateId` 避开上一页。同一对里两张 `full-image-bordered` 允许重复（满版单图并排是正常节奏）
 - `fillTextElements` 认 `body` / `shortBody` / 标题线；`shortBody` 只给 `five-collage-whitespace` 那种小文字框取一行短句。`applyTemplate` 必须把 `shortBody` 写进 `TextElement`，否则会被长正文顶出框
