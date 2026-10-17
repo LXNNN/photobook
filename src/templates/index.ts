@@ -236,8 +236,8 @@ export const TEMPLATES: TemplateDefinition[] = [
     description: '上下两张横图居中，大量留白，左上角配小字文案，文艺感强',
     thumbnail: 'two-slanted',
     elements: [
-      // 左上角小字文案（宽度缩小30%，与上图间距8mm）
-      { type: 'text', x: 0.12, y: 0.148, width: 0.532, height: 0.03, placeholder: '出发的意义从来都不是赶路', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333' },
+      // 左上角小字文案（宽度96mm，与上图间距8mm）
+      { type: 'text', x: 0.12, y: 0.148, width: 0.6486, height: 0.03, placeholder: '出发的意义从来都不是赶路', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333' },
       // 上方横图（下移，与下图间距5mm）
       { type: 'image', x: 0.12, y: 0.216, width: 0.76, height: 0.32, cropHint: 'cover' },
       // 下方横图（位置不变）
@@ -303,8 +303,8 @@ export const TEMPLATES: TemplateDefinition[] = [
     description: '三张竖版照片从左下到右上阶梯错落排列，左上角配标题和短句文案',
     thumbnail: 'three-stairs',
     elements: [
-      // 底部普通选区（米白色背景块，最底层）
-      { type: 'shape', x: 0, y: 0.6995, width: 0.998, height: 0.3, backgroundColor: '#faf8f5' },
+      // 底部普通选区（米白背景块，最底层）
+      { type: 'shape', x: 0, y: 0.6995, width: 0.998, height: 0.3, backgroundColor: '#f5f0e8' },
       // 标题
       { type: 'text', x: 0.093, y: 0.139, width: 0.5, height: 0.06, placeholder: '时光印记', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
       // 文案（两行短句）
@@ -343,6 +343,8 @@ export const TEMPLATES: TemplateDefinition[] = [
     description: '顶部右对齐标题+上方两小图+中间横大图+底部正文，错落有致',
     thumbnail: 'three-top-two-bottom-wide',
     elements: [
+      // 左上角装饰英文（固定内容，Playfair Display字体，8pt）
+      { type: 'text', x: 0.1047, y: 0.0705, width: 0.2243, height: 0.0424, placeholder: 'The sunshine is just right', fixed: true, fontFamily: 'Playfair Display', fontSizeRatio: 0.0191, textAlign: 'left', fontWeight: 'normal', color: '#2c2c2c' },
       // 标题（右对齐）
       { type: 'text', x: 0.4614, y: 0.1656, width: 0.38, height: 0.05, placeholder: '在这里写标题', fontSizeRatio: 0.045, textAlign: 'right', fontWeight: 'bold', color: '#2c2c2c' },
       // 左上小图
@@ -474,9 +476,9 @@ export const TEMPLATES: TemplateDefinition[] = [
       // 大标题
       { type: 'text', x: 0.08, y: 0.12, width: 0.6, height: 0.08, placeholder: '这里写标题', fontSizeRatio: 0.06, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
       // 左图
-      { type: 'image', x: 0.08, y: 0.24, width: 0.42, height: 0.58, cropHint: 'cover' },
+      { type: 'image', x: 0.0764, y: 0.24, width: 0.4189, height: 0.58, cropHint: 'cover' },
       // 右图
-      { type: 'image', x: 0.5, y: 0.24, width: 0.42, height: 0.58, cropHint: 'cover' },
+      { type: 'image', x: 0.5034, y: 0.24, width: 0.4189, height: 0.58, cropHint: 'cover' },
       // 正文
       { type: 'text', x: 0.08, y: 0.86, width: 0.5676, height: 0.1, placeholder: '在这里写下你的故事和感受...', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333' },
     ],
