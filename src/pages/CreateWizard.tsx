@@ -4,7 +4,8 @@ import { useAppDispatch } from '@/store';
 import { setCurrentProject } from '@/store/projectSlice';
 import { setCurrentPage as setCurrentPageAction } from '@/store/editorSlice';
 import { THEMES } from '@/templates/themes';
-import { autoGenerateAlbum } from '@/utils/autoLayout';
+import { autoGenerateAlbum, type AutoPhoto } from '@/utils/autoLayout';
+import { analyzePhotoWeight } from '@/utils/photoAnalysis';
 import { createPreviewImage, fileToImageAsset, isImageFile, toDisplayableFile } from '@/utils/image';
 import { saveImageAsset } from '@/utils/assetStore';
 import { generateId } from '@/utils/units';
@@ -153,11 +154,19 @@ export default function CreateWizard() {
     setProgress(0);
 
     try {
-      // 1. 先把照片处理成资产（这一步还不落盘）
+      // 1. 先把照片处理成资产（这一步还不落盘），顺便在本地算「画面分量」
+      //    给智能排版挑主角用 —— 只读 200px 缩略图，照片不出电脑
       const imageAssets: ImageAsset[] = [];
+      const autoPhotos: AutoPhoto[] = [];
       for (let i = 0; i < images.length; i++) {
         const asset = await fileToImageAsset(images[i].file);
         imageAssets.push(asset);
+        autoPhotos.push({
+          id: asset.id,
+          width: asset.width,
+          height: asset.height,
+          weight: await analyzePhotoWeight(asset.thumbnail),
+        });
         setProgress(Math.round(((i + 1) / images.length) * 40));
       }
 
@@ -165,9 +174,8 @@ export default function CreateWizard() {
       const project = autoGenerateAlbum({
         projectName: projectName.trim(),
         themeId: selectedTheme,
-        imageIds: imageAssets.map((a) => a.id),
+        photos: autoPhotos,
         format: PRESET_FORMATS.A5,
-        maxImagesPerPage: 5,
         // 正文字号不在这里选了，统一用默认的 13pt（DEFAULT_BODY_FONT_SIZE）；
         // 想改的话是生成之后在编辑页「🎨 正文样式」里改
         includeCover,

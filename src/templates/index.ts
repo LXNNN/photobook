@@ -762,8 +762,11 @@ export function applyTemplate(
         backgroundColor: tplEl.backgroundColor,
         fixed: (tplEl as any).fixed || false,
         // 显式表态：模板出来的每个文字都写明是不是正文 / 标题，
-        // 全站不用再靠字号猜（封面尾页那几段也是显式的 false）
+        // 全站不用再靠字号猜（封面尾页那几段也是显式的 false）。
+        // shortBody 也要写出来：不写的话智能排版回填文案时只认 body，
+        // 小空间里的短句会被长正文顶掉、撑出文字框。
         body: isBody,
+        shortBody: tplEl.shortBody === true,
         title,
       });
     }
@@ -916,6 +919,8 @@ export function pageElementsToTemplateElements(
       if (text.fixed) t.fixed = true;
       // 正文标记同理：丢了下次应用就变成「装饰小字」，不再填文案、也不跟正文样式走
       if (text.body !== undefined) t.body = text.body;
+      // 短正文标记也要写回：丢了下次应用会按普通正文填长文案，撑出小文字框
+      if (text.shortBody) t.shortBody = true;
       // 背景色也要写回，不然「新建模板」存下来下次应用就丢了
       if (text.backgroundColor) t.backgroundColor = text.backgroundColor;
       return t;

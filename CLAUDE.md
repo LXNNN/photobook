@@ -62,9 +62,20 @@ npm run preview   # 预览构建产物
 - 模板库 = 内置模板 + 用户自定义覆盖 − 用户删除。落盘在 IndexedDB（customTemplates / deletedTemplates 墓碑）。`initTemplateLibrary()` 在 `main.tsx` 里 React 渲染前 await
 - **内置模板删除必须记墓碑**（deletedTemplates store），否则下次启动随内置模板一起复活
 - `templates/` 不能反向 import `utils/storage`（循环引用）——持久化对齐都走 `utils/templateLibrary.ts`
-- 文案填充规则：`fixed: true` 的文字（装饰性小字，如 TIME 竖排字母、"旅行碎片"）保持 placeholder 不动；标题/正文按 `fontSizeRatio ≥ 0.04` 区分；正文字号用 `project.bodyFontSize`（12/14pt）；旅行/日常主题用模板专属文案库，其他主题用主题文案库
-- `pageElementsToTemplateElements` 写回模板时**必须带上 fixed 标记**，否则存出来的模板下次应用时装饰文字会被随机文案顶掉
+- 文案填充规则：`fixed: true` 的文字（装饰性小字，如 TIME 竖排字母、"旅行碎片"）保持 placeholder 不动；`shortBody: true` 的小文字框取主题 `shortParagraphs` 里的一行短句；标题/正文优先看显式的 `title` / `body` 标记，没标记时按 `fontSizeRatio ≥ 0.04` 区分；正文字号用 `project.bodyFontSize`（默认 13）；旅行/日常主题用模板专属文案库，其他主题用主题文案库
+- `pageElementsToTemplateElements` 写回模板时**必须带上 fixed / body / shortBody 标记**，否则存出来的模板下次应用时装饰文字会被随机文案顶掉、小框短句会被长正文撑出去
 - 隐藏模板：`HIDDEN_TEMPLATE_IDS = ['full-image']`
+
+### 智能排版（src/utils/autoLayout.ts + utils/photoAnalysis.ts）
+
+- 创建页「✨ 开始生成」走 `autoGenerateAlbum({ photos })`。照片先转成 `AutoPhoto`（宽高 + `weight` 画面分量），`weight` 由 `photoAnalysis.analyzePhotoWeight` 读 200px 缩略图在本地算（对比度 / 边缘密度 / 饱和度），只活在内存、不落盘，照片不出电脑
+- **按跨页成对规划**：正文页先复用 `spreadGroups()` 配成 `[1,2]`、`[3,4]`…，每对照片总数最多 `MAX_PHOTOS_PER_SPREAD = 8`（没有下限，小相册 1+1、2+2 都允许）。九宫格那一对固定 `[10,1]` 是唯一例外——九宫格要 ≥30 张才启用、一本最多一次
+- 单图页有四个模板参与轮换：满版（`full-image-bordered`）、上图下文、上文下图、左图右文。**满版图必须和 ≥4 张照片的另一页配对**（满版没有文案，小跨页里会显得空）；1+1 / 1+2 / 1+3 时该页改用带文字的三个单图模板。落单页旁边是封面/尾页，不受这条限制
+- 6 图模板在 ≥12 张时随机挑一对排 `[6,1]` / `[6,2]`（选页数时按 7 张给它预留容量，分配时那一对的下限也钉在 7，免得被前面的页吃光），一本最多一页；四图的 `four-magazine` **不参与智能排版**，只在模板面板供手动选用
+- 图位分配 `orderPhotosForTemplate`：按图位面积从大到小贪心，`cropLoss` 衡量横竖裁切；最大图位有 `0.18 × weight` 的主角加成，但形状差太多时会让位（形状合适时 100% 进主角位，不合适时不硬塞）
+- 模板整本轮换：`usage` 计整本使用次数，`usedInUnit` 保证同一对不重复，`lastTemplateId` 避开上一页。同一对里两张 `full-image-bordered` 允许重复（满版单图并排是正常节奏）
+- `fillTextElements` 认 `body` / `shortBody` / 标题线；`shortBody` 只给 `five-collage-whitespace` 那种小文字框取一行短句。`applyTemplate` 必须把 `shortBody` 写进 `TextElement`，否则会被长正文顶出框
+- 总页数永远是偶数（封面/结尾的奇偶一起算），落单页上限 `MAX_LONE_COUNT = 5`，保证结尾页不会和前一页挤进同一个跨页
 
 ### 编辑器（src/pages/Editor.tsx + engine/）
 

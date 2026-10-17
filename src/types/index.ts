@@ -126,6 +126,12 @@ export interface TextElement extends BaseElement {
    */
   body?: boolean;
   /**
+   * 短正文标记：空间小的正文区域（比如五图留白模板左上角那行），
+   * 从主题的 shortParagraphs 里取一行短句，不用长正文。
+   * 和 body 成对使用；不填 = 普通正文。
+   */
+  shortBody?: boolean;
+  /**
    * 标题标记：「📝 添加文字 → 添加标题」做出来的那段标题。
    * true = 标题；false = 明确不是标题（手动写的正文）；不填 = 模板做的或
    * 老相册的数据，按字号是否到标题线判断（见 utils/bodyText.ts 的 isTitleText）。
