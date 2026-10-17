@@ -1,13 +1,35 @@
-import type { Page, Element, BookFormat } from '@/types';
+import type { Element, BookFormat } from '@/types';
+import type { SpreadPage } from '@/utils/spreadLayout';
 import { mmToPx } from '@/utils/units';
 import { drawPageContent } from './drawPageContent';
 
+/** 边界距离标注的数据结构（坐标是画布 mm，已带页面偏移） */
+export interface BoundaryDistance {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  leftTargetX: number;
+  rightTargetX: number;
+  topTargetY: number;
+  bottomTargetY: number;
+}
+
 /**
- * Canvas 渲染器
- * 负责将页面数据渲染到 Canvas 上
+ * Canvas 渲染器（双页画布）
  *
- * 页面内容（背景 + 元素）的绘制规则在 drawPageContent 里，和左侧书页缩略图共用；
- * 这里只额外负责编辑器专属的出血线、安全线、选中框。
+ * 画布永远是两页宽：正文跨页左页在左、右页在右；封面/结尾这种落单页居中
+ * （左右露出编辑器桌面底色）。页面内容（背景 + 元素）的绘制规则仍然只走
+ * drawPageContent —— 这里只额外负责每页的偏移、投影、出血线/安全线、
+ * 中缝、活动页边框和选中框。
+ *
+ * 每页必须在 clip 之后才 translate + drawPageContent：drawPageContent 会用
+ * ctx 变换反推逻辑画布尺寸来铺背景，translate 之后清屏/背景会一直铺到画布
+ * 右缘（落单居中页会糊满右半边桌面）。
  */
 export class CanvasRenderer {
   private canvas: HTMLCanvasElement;
@@ -26,10 +48,10 @@ export class CanvasRenderer {
     this.resize();
   }
 
-  /** 调整画布尺寸以匹配页面物理尺寸 */
+  /** 调整画布尺寸：固定两页宽（落单页画在中缝位置） */
   resize(dpi?: number) {
     if (dpi) this.dpi = dpi;
-    const width = Math.round(mmToPx(this.format.width, this.dpi));
+    const width = Math.round(mmToPx(this.format.width, this.dpi)) * 2;
     const height = Math.round(mmToPx(this.format.height, this.dpi));
     this.canvas.width = width;
     this.canvas.height = height;
@@ -52,32 +74,50 @@ export class CanvasRenderer {
     this.rafId = null;
   }
 
-  /** 渲染整个页面 */
-  async render(page: Page, selectedIds: string[] = [], showGuides = true, showBleed = true, hoverTargetId?: string | null) {
-    this.currentPage = page;
+  /** 渲染当前跨页（1~2 页） */
+  async render(
+    pages: SpreadPage[],
+    selectedIds: string[] = [],
+    showGuides = true,
+    showBleed = true,
+    hoverTargetId?: string | null,
+    activePageIndex?: number
+  ) {
+    this.currentPages = pages;
     this.selectedIds = selectedIds;
     this.showGuides = showGuides;
     this.showBleed = showBleed;
     this.hoverTargetId = hoverTargetId || null;
+    this.activePageIndex = activePageIndex ?? null;
     this.markDirty();
   }
 
-  private currentPage: Page | null = null;
+  private currentPages: SpreadPage[] = [];
   private selectedIds: string[] = [];
   private showGuides = true;
   private showBleed = true;
   private hoverTargetId: string | null = null;
+  private activePageIndex: number | null = null;
   private alignGuides: { vertical: number[]; horizontal: number[] } = { vertical: [], horizontal: [] };
-  private boundaryDistance: { left: number; right: number; top: number; bottom: number; x: number; y: number; width: number; height: number; leftTargetX: number; rightTargetX: number; topTargetY: number; bottomTargetY: number } | null = null;
+  private boundaryDistance: BoundaryDistance | null = null;
 
   setAlignGuides(guides: { vertical: number[]; horizontal: number[] }) {
     this.alignGuides = guides;
     this.markDirty();
   }
 
-  setBoundaryDistance(dist: { left: number; right: number; top: number; bottom: number; x: number; y: number; width: number; height: number; leftTargetX: number; rightTargetX: number; topTargetY: number; bottomTargetY: number } | null) {
+  setBoundaryDistance(dist: BoundaryDistance | null) {
     this.boundaryDistance = dist;
     this.markDirty();
+  }
+
+  /** 页面左上角在画布里的像素位置 */
+  private pageOriginX(page: SpreadPage): number {
+    return mmToPx(page.offsetX, this.dpi);
+  }
+
+  private get pageWidthPx(): number {
+    return mmToPx(this.format.width, this.dpi);
   }
 
   private draw() {
@@ -85,37 +125,75 @@ export class CanvasRenderer {
     const { width, height } = this.canvas;
     ctx.clearRect(0, 0, width, height);
 
-    if (!this.currentPage) return;
+    if (this.currentPages.length === 0) return;
 
-    // 背景 + 全部元素：和左侧缩略图走同一份规则
-    drawPageContent(ctx, this.currentPage, this.format, this.dpi, this.imageCache);
-
-    // 绘制辅助线
-    if (this.showGuides || this.showBleed) {
-      this.drawGuides();
+    // 1. 先给每页垫白底 + 投影（内容随后覆盖）。两页的投影都画完再画内容，
+    //    否则右页投影会压到左页内容上，中缝附近会多出一道灰边。
+    for (const page of this.currentPages) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.18)';
+      ctx.shadowBlur = 16;
+      ctx.shadowOffsetY = 3;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(this.pageOriginX(page), 0, this.pageWidthPx, height);
+      ctx.restore();
     }
 
-    // 绘制对齐辅助线
+    // 2. 每页 clip 后平移到自己的位置再画内容 —— 背景不会越界到隔壁页/桌面
+    for (const page of this.currentPages) {
+      const originX = this.pageOriginX(page);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(originX, 0, this.pageWidthPx, height);
+      ctx.clip();
+      ctx.translate(originX, 0);
+      drawPageContent(ctx, page.page, this.format, this.dpi, this.imageCache);
+      ctx.restore();
+
+      if (this.showGuides || this.showBleed) {
+        this.drawPageGuides(originX);
+      }
+
+      if (this.activePageIndex !== null && page.index === this.activePageIndex) {
+        this.drawActivePageBorder(originX);
+      }
+    }
+
+    // 3. 中缝：只有两页配对时才画（落单页居中，没有中缝）
+    if (this.currentPages.length === 2) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(150, 145, 135, 0.35)';
+      ctx.fillRect(width / 2 - 0.5, 0, 1, height);
+      ctx.restore();
+    }
+
+    // 4. 对齐辅助线（坐标已是画布 mm）
     this.drawAlignGuides();
 
-    // 绘制边界距离
+    // 5. 边界距离
     this.drawBoundaryDistance();
 
-    // 绘制选中框
-    const elements = [...this.currentPage.elements].sort((a, b) => a.zIndex - b.zIndex);
+    // 6. 选中框 / hover 高亮：按元素所在页加偏移
     for (const id of this.selectedIds) {
-      const el = elements.find((e) => e.id === id);
-      if (el) this.drawSelection(el);
+      const found = this.findElement(id);
+      if (found) this.drawSelection(found.element, this.pageOriginX(found.page));
     }
 
-    // 绘制 hover 高亮（拖拽调换位置时的目标）
     if (this.hoverTargetId) {
-      const el = elements.find((e) => e.id === this.hoverTargetId);
-      if (el) this.drawHoverHighlight(el);
+      const found = this.findElement(this.hoverTargetId);
+      if (found) this.drawHoverHighlight(found.element, this.pageOriginX(found.page));
     }
   }
 
-  /** 绘制对齐辅助线 */
+  private findElement(id: string): { element: Element; page: SpreadPage } | null {
+    for (const page of this.currentPages) {
+      const element = page.page.elements.find((el) => el.id === id);
+      if (element) return { element, page };
+    }
+    return null;
+  }
+
+  /** 绘制对齐辅助线（画布 mm 坐标，竖线贯穿整块画布） */
   private drawAlignGuides() {
     const ctx = this.ctx;
     const { width, height } = this.canvas;
@@ -125,7 +203,6 @@ export class CanvasRenderer {
     ctx.lineWidth = 1;
     ctx.setLineDash([]);
 
-    // 画竖线
     for (const x of this.alignGuides.vertical) {
       const px = mmToPx(x, this.dpi);
       ctx.beginPath();
@@ -134,7 +211,6 @@ export class CanvasRenderer {
       ctx.stroke();
     }
 
-    // 画横线
     for (const y of this.alignGuides.horizontal) {
       const py = mmToPx(y, this.dpi);
       ctx.beginPath();
@@ -146,14 +222,13 @@ export class CanvasRenderer {
     ctx.restore();
   }
 
-  /** 绘制元素距离页面四边的距离标注 */
+  /** 绘制元素距离页面四边的距离标注（坐标是画布 mm） */
   private drawBoundaryDistance() {
     if (!this.boundaryDistance) return;
     const ctx = this.ctx;
     const d = this.boundaryDistance;
     const dpi = this.dpi;
 
-    // 元素中心位置
     const elCenterX = d.x + d.width / 2;
     const elCenterY = d.y + d.height / 2;
 
@@ -166,11 +241,9 @@ export class CanvasRenderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // 绘制距离标注的辅助函数
     const drawLabel = (text: string, cxMm: number, cyMm: number) => {
       const cx = mmToPx(cxMm, dpi);
       const cy = mmToPx(cyMm, dpi);
-      // 测量文字宽度，画背景框
       const metrics = ctx.measureText(text);
       const padX = 4;
       const padY = 2;
@@ -183,7 +256,6 @@ export class CanvasRenderer {
       ctx.fillStyle = '#2196f3';
     };
 
-    // 左边距离：从左侧目标（相邻元素右边缘或页边）到元素左边缘
     const leftLineY = elCenterY;
     ctx.beginPath();
     ctx.moveTo(mmToPx(d.leftTargetX, dpi), mmToPx(leftLineY, dpi));
@@ -191,7 +263,6 @@ export class CanvasRenderer {
     ctx.stroke();
     drawLabel(`${d.left}mm`, (d.leftTargetX + d.x) / 2, leftLineY);
 
-    // 右边距离：从元素右边缘到右侧目标（相邻元素左边缘或页边）
     const rightLineY = elCenterY;
     const elRight = d.x + d.width;
     ctx.beginPath();
@@ -200,7 +271,6 @@ export class CanvasRenderer {
     ctx.stroke();
     drawLabel(`${d.right}mm`, (elRight + d.rightTargetX) / 2, rightLineY);
 
-    // 上边距离：从上方目标（相邻元素下边缘或页边）到元素上边缘
     const topLineX = elCenterX;
     ctx.beginPath();
     ctx.moveTo(mmToPx(topLineX, dpi), mmToPx(d.topTargetY, dpi));
@@ -208,7 +278,6 @@ export class CanvasRenderer {
     ctx.stroke();
     drawLabel(`${d.top}mm`, topLineX, (d.topTargetY + d.y) / 2);
 
-    // 下边距离：从元素下边缘到下方目标（相邻元素上边缘或页边）
     const bottomLineX = elCenterX;
     const elBottom = d.y + d.height;
     ctx.beginPath();
@@ -220,10 +289,11 @@ export class CanvasRenderer {
     ctx.restore();
   }
 
-  /** 绘制辅助线（出血线、安全线） */
-  private drawGuides() {
+  /** 绘制某一页的出血线、安全线（originX 是该页左缘像素位置） */
+  private drawPageGuides(originX: number) {
     const ctx = this.ctx;
-    const { width, height } = this.canvas;
+    const width = this.pageWidthPx;
+    const height = this.canvas.height;
     const bleed = mmToPx(this.format.bleed, this.dpi);
     const safe = mmToPx(this.format.safeMargin, this.dpi);
 
@@ -231,7 +301,7 @@ export class CanvasRenderer {
       ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
       ctx.setLineDash([4, 4]);
       ctx.lineWidth = 1;
-      ctx.strokeRect(bleed, bleed, width - bleed * 2, height - bleed * 2);
+      ctx.strokeRect(originX + bleed, bleed, width - bleed * 2, height - bleed * 2);
       ctx.setLineDash([]);
     }
 
@@ -239,15 +309,25 @@ export class CanvasRenderer {
       ctx.strokeStyle = 'rgba(0, 100, 255, 0.4)';
       ctx.setLineDash([2, 4]);
       ctx.lineWidth = 1;
-      ctx.strokeRect(safe, safe, width - safe * 2, height - safe * 2);
+      ctx.strokeRect(originX + safe, safe, width - safe * 2, height - safe * 2);
       ctx.setLineDash([]);
     }
   }
 
-  /** 绘制选中框和控制点 */
-  private drawSelection(el: Element) {
+  /** 活动页边框：新加的照片/文字会落在这页，给个不刺眼的琥珀色提示 */
+  private drawActivePageBorder(originX: number) {
     const ctx = this.ctx;
-    const x = mmToPx(el.x, this.dpi);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(180, 83, 9, 0.75)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(originX + 1, 1, this.pageWidthPx - 2, this.canvas.height - 2);
+    ctx.restore();
+  }
+
+  /** 绘制选中框和控制点（offsetX 是元素所在页的左缘像素位置） */
+  private drawSelection(el: Element, offsetX: number) {
+    const ctx = this.ctx;
+    const x = offsetX + mmToPx(el.x, this.dpi);
     const y = mmToPx(el.y, this.dpi);
     const w = mmToPx(el.width, this.dpi);
     const h = mmToPx(el.height, this.dpi);
@@ -259,12 +339,10 @@ export class CanvasRenderer {
     ctx.rotate(((el.rotation ?? 0) * Math.PI) / 180);
     ctx.translate(-cx, -cy);
 
-    // 选中框
     ctx.strokeStyle = '#2196f3';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x, y, w, h);
 
-    // 8个控制点
     const handleSize = 8;
     const handles = [
       [x, y], [x + w / 2, y], [x + w, y],
@@ -279,7 +357,6 @@ export class CanvasRenderer {
       ctx.strokeRect(hx - handleSize / 2, hy - handleSize / 2, handleSize, handleSize);
     }
 
-    // 旋转控制点（顶部）—— shape 类型（普通选区）不显示旋转控制点
     if (el.type !== 'shape') {
       const rotY = y - 24;
       ctx.beginPath();
@@ -296,20 +373,17 @@ export class CanvasRenderer {
   }
 
   /** 绘制 hover 高亮（拖拽调换位置时的目标） */
-  private drawHoverHighlight(el: Element) {
+  private drawHoverHighlight(el: Element, offsetX: number) {
     const ctx = this.ctx;
-    const x = mmToPx(el.x, this.dpi);
+    const x = offsetX + mmToPx(el.x, this.dpi);
     const y = mmToPx(el.y, this.dpi);
     const w = mmToPx(el.width, this.dpi);
     const h = mmToPx(el.height, this.dpi);
 
     ctx.save();
-
-    // 半透明填充
     ctx.fillStyle = 'rgba(33, 150, 243, 0.2)';
     ctx.fillRect(x, y, w, h);
 
-    // 高亮边框
     ctx.strokeStyle = '#2196f3';
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 3]);

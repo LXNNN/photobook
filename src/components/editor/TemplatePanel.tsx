@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import {
   TEMPLATES,
   getTemplateCategories,
@@ -9,10 +9,10 @@ import {
 } from '@/templates';
 import { deleteTemplateFromLibrary } from '@/utils/templateLibrary';
 import { useAppDispatch, useAppSelector } from '@/store';
-import { replacePageElements, addPage, pushHistory } from '@/store/projectSlice';
+import { replacePageElements, pushHistory } from '@/store/projectSlice';
 import { DEFAULT_BODY_COLOR, DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
-import { clearSelection, setCurrentPage } from '@/store/editorSlice';
-import type { BookFormat, Element } from '@/types';
+import { clearSelection } from '@/store/editorSlice';
+import type { BookFormat } from '@/types';
 
 interface Props {
   format: BookFormat;
@@ -24,15 +24,31 @@ interface Props {
  */
 export default function TemplatePanel({ format, onApplied }: Props) {
   const dispatch = useAppDispatch();
-  const currentPageIndex = useAppSelector((s) => s.editor.currentPageIndex);
+  // 模板应用到「活动页」——双页画布上点中的那一页，不是跨页锚页
+  const activePageIndex = useAppSelector((s) => s.editor.activePageIndex);
   const project = useAppSelector((s) => s.project.current);
   // 模板库是模块级的可变数组，订阅版本号才能在新增/删除后重新渲染
   useSyncExternalStore(subscribeTemplates, getTemplatesVersion);
   const categories = getTemplateCategories();
 
+  // 分类下拉：只做定位（滚动到对应分类），不过滤模板
+  const [jumpCategory, setJumpCategory] = useState('');
+
+  function jumpToCategory(category: string) {
+    if (!category) return;
+    document
+      .getElementById(`template-category-${category}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // 撤销/删页后页码可能暂时越界
+  const pageIndex = project
+    ? Math.max(0, Math.min(project.pages.length - 1, activePageIndex))
+    : 0;
+
   // 收集当前页面已有的图片ID，应用模板时优先保留这些图片
   const currentPageImageIds = project
-    ? project.pages[currentPageIndex]?.elements.filter((e) => e.type === 'image').map((e) => (e as any).imageId).filter(Boolean)
+    ? project.pages[pageIndex]?.elements.filter((e) => e.type === 'image').map((e) => (e as any).imageId).filter(Boolean)
     : [];
 
   function handleApply(templateId: string) {
@@ -42,18 +58,14 @@ export default function TemplatePanel({ format, onApplied }: Props) {
     // 先记录历史，支持 Ctrl+Z 撤销
     dispatch(pushHistory());
 
-    // 记录应用模板前的页面 id，应用完后通过 id 找回这一页
-    const savedPageId = project.pages[currentPageIndex]?.id;
-
     // 当前页所有图片ID
     const allImageIds = currentPageImageIds;
     // 新模板需要多少个图片位
     const neededSlots = template.elements.filter((e) => e.type === 'image').length;
 
-    // 当前页用前 N 张图
+    // 只保留新模板放得下的照片，多出来的直接丢弃（不再为它们新建页面）。
+    // 照片记录还在 IndexedDB 里，Ctrl+Z 能整页恢复。
     const currentPageImages = allImageIds.slice(0, neededSlots);
-    // 多出来的图片
-    const extraImages = allImageIds.slice(neededSlots);
 
     // 应用模板到当前页（记录模板 ID，支持"保存模板"回写）
     const elements = applyTemplate(
@@ -64,26 +76,10 @@ export default function TemplatePanel({ format, onApplied }: Props) {
       project.bodyFontSize || DEFAULT_BODY_FONT_SIZE,
       project.bodyColor || DEFAULT_BODY_COLOR
     );
-    dispatch(replacePageElements({ pageIndex: currentPageIndex, elements, templateId: template.id }));
-
-    // 如果有多出来的图片，在当前页后面插入新页
-    if (extraImages.length > 0) {
-      // 用多图模板放多余图片
-      const extraTemplate = TEMPLATES.find((t) => t.id === 'two-images-stack')!;
-      const extraElements = applyTemplate(
-        extraTemplate,
-        format,
-        extraImages,
-        project.themeId,
-        project.bodyFontSize || DEFAULT_BODY_FONT_SIZE,
-        project.bodyColor || DEFAULT_BODY_COLOR
-      );
-      dispatch(addPage({ afterIndex: currentPageIndex, elements: extraElements }));
-    }
+    dispatch(replacePageElements({ pageIndex, elements, templateId: template.id }));
 
     dispatch(clearSelection());
-    // 确保左侧缩略图定位在当前页
-    dispatch(setCurrentPage(currentPageIndex));
+    // 不跳到别的页：用户正在看哪个跨页就留在哪个跨页
     onApplied?.();
     // 等左侧面板切换到页面标签后，滚动到当前页
     setTimeout(() => {
@@ -102,63 +98,90 @@ export default function TemplatePanel({ format, onApplied }: Props) {
   }
 
   return (
-    <div className="space-y-4">
-      {categories.map((category) => (
-        <div key={category}>
-          <h4 className="text-xs font-bold text-gray-600 mb-2 px-1 flex items-center gap-1">
-            <span className="text-sm">🖼️</span>{category}
-          </h4>
-          <div className="grid grid-cols-2 gap-2">
-            {getTemplatesByCategory(category).map((template) => (
-              // 用 div 而不是 button：删除按钮要嵌在里面，button 套 button 是非法 HTML
-              <div
-                key={template.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => handleApply(template.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleApply(template.id);
-                  }
-                }}
-                className="group relative border border-gray-200 rounded-lg overflow-hidden hover:border-amber-500 hover:shadow-md transition-all text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-                title={template.description}
-              >
-                {/* 删除按钮：只有"我的模板"才显示，鼠标移上去才出现 */}
-                {category === '我的模板' && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(template.id, template.name);
+    <div className="flex flex-col h-full">
+      {/* 分类下拉：选一个分类就滚动定位到它。
+          单独占一条工具条（不随模板滚动），而不是 sticky —— sticky 只盖住自己那块，
+          上一分类的内容会从它上方和边缘透出来，定位后还留半行字在框上 */}
+      <div className="flex-shrink-0 px-3 pt-3 pb-2 bg-white border-b border-gray-100">
+        <select
+          aria-label="按分类定位模板"
+          value={jumpCategory}
+          onChange={(e) => {
+            setJumpCategory(e.target.value);
+            jumpToCategory(e.target.value);
+          }}
+          className="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-600 bg-white focus:outline-none focus:border-amber-500 cursor-pointer"
+        >
+          <option value="">按分类定位…</option>
+          {categories.map((category) => (
+            <option key={category} value={category}>
+              {category}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* 模板列表自己的滚动区：定位目标贴的是这块的顶边，不会被下拉框盖住 */}
+      <div className="flex-1 overflow-auto p-3">
+        <div className="space-y-4">
+          {categories.map((category) => (
+            <div key={category} id={`template-category-${category}`} className="scroll-mt-3">
+              <h4 className="text-xs font-bold text-gray-600 mb-2 px-1 flex items-center gap-1">
+                <span className="text-sm">🖼️</span>{category}
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                {getTemplatesByCategory(category).map((template) => (
+                  // 用 div 而不是 button：删除按钮要嵌在里面，button 套 button 是非法 HTML
+                  <div
+                    key={template.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleApply(template.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleApply(template.id);
+                      }
                     }}
-                    title="删除这个模板"
-                    aria-label={`删除模板 ${template.name}`}
-                    className="absolute top-1 right-1 z-10 w-5 h-5 bg-black/50 text-white rounded-full text-xs leading-none opacity-0 group-hover:opacity-100 hover:bg-red-500 focus:opacity-100 transition-all flex items-center justify-center"
+                    className="group relative border border-gray-200 rounded-lg overflow-hidden hover:border-amber-500 hover:shadow-md transition-all text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                    title={template.description}
                   >
-                    ×
-                  </button>
-                )}
-                {/* 模板缩略图 */}
-                <div className="aspect-[148/210] bg-white p-1.5">
-                  <TemplateThumbnail templateId={template.id} />
-                </div>
-                {/* 模板名称 */}
-                <div className="px-2 py-1.5 bg-gray-50 border-t border-gray-100">
-                  <p className="text-xs font-medium text-gray-700 group-hover:text-amber-700 truncate">
-                    {template.name}
-                  </p>
-                </div>
+                    {/* 删除按钮：只有"我的模板"才显示，鼠标移上去才出现 */}
+                    {category === '我的模板' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(template.id, template.name);
+                        }}
+                        title="删除这个模板"
+                        aria-label={`删除模板 ${template.name}`}
+                        className="absolute top-1 right-1 z-10 w-5 h-5 bg-black/50 text-white rounded-full text-xs leading-none opacity-0 group-hover:opacity-100 hover:bg-red-500 focus:opacity-100 transition-all flex items-center justify-center"
+                      >
+                        ×
+                      </button>
+                    )}
+                    {/* 模板缩略图 */}
+                    <div className="aspect-[148/210] bg-white p-1.5">
+                      <TemplateThumbnail templateId={template.id} />
+                    </div>
+                    {/* 模板名称 */}
+                    <div className="px-2 py-1.5 bg-gray-50 border-t border-gray-100">
+                      <p className="text-xs font-medium text-gray-700 group-hover:text-amber-700 truncate">
+                        {template.name}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          ))}
+
+          <div className="pt-2 border-t border-gray-100">
+            <p className="text-xs text-gray-400 px-1 leading-relaxed">
+              点击模板即可应用到当前页面。已上传的图片会自动填充到模板的图片位，你可以替换为其他图片。
+            </p>
           </div>
         </div>
-      ))}
-
-      <div className="pt-2 border-t border-gray-100">
-        <p className="text-xs text-gray-400 px-1 leading-relaxed">
-          点击模板即可应用到当前页面。已上传的图片会自动填充到模板的图片位，你可以替换为其他图片。
-        </p>
       </div>
     </div>
   );

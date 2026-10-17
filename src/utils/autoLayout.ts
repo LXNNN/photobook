@@ -3,7 +3,7 @@ import { TEMPLATES, applyTemplate, type TemplateDefinition } from '@/templates';
 import { THEMES, randomPick, getThemeById, type Theme } from '@/templates/themes';
 import { generateId } from '@/utils/units';
 import { DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
-import { spreadGroups } from '@/utils/exportImages';
+import { spreadGroups } from '@/utils/spread';
 
 /**
  * 智能生成相册（v2）

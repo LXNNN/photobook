@@ -4,6 +4,7 @@ import { collectAssetIds, drawPageContent } from '@/engine/drawPageContent';
 import { decodeAssets } from './assetStore';
 import { mmToPx } from './units';
 import { safeFolderName } from './fileNames';
+import { spreadGroups } from './spread';
 
 /**
  * 把整本相册导出成一批高清图片（zip 打包下载）。
@@ -41,18 +42,11 @@ export type ImageExportMode = 'single' | 'spread';
 export const SHOW_IMAGE_EXPORT_ENTRY = true;
 
 /**
- * 跨页分组，规则与预览页（page-flip showCover）完全一致：
- * [0]（封面）、[1,2]、[3,4]…，总页数为偶数时末页单独在左（背封）。
- * 双面导出和菜单里的张数预览都用它，别在别处再写一套。
+ * 跨页分组（[0]、[1,2]、[3,4]…，偶数页数时末页落单）的唯一实现在
+ * utils/spread.ts —— 预览页、双面导出、智能排版、编辑器四处在共用。
+ * 这里 re-export 保持原有 import 路径可用。
  */
-export function spreadGroups(total: number): number[][] {
-  if (total <= 0) return [];
-  const groups: number[][] = [[0]];
-  for (let i = 1; i < total; i += 2) {
-    groups.push(i + 1 < total ? [i, i + 1] : [i]);
-  }
-  return groups;
-}
+export { spreadGroups };
 
 /** 图片文件名：一页的写「第01页.jpg」，两页拼的写「第02-03页.jpg」（页码从 1 数起，和预览页顶栏一致） */
 function groupFileName(group: number[]): string {

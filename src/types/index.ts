@@ -171,7 +171,13 @@ export interface StoredImageRecord {
 }
 
 export interface EditorState {
+  /** 当前跨页的锚页（这一组的第一页） */
   currentPageIndex: number;
+  /**
+   * 活动页：新增照片/文字/模板落到哪一页（点哪页就是哪页）。
+   * 和 currentPageIndex 分开：点元素只动活动页不清选中，这样才能跨页多选。
+   */
+  activePageIndex: number;
   selectedElementIds: string[];
   zoom: number;
   pan: { x: number; y: number };

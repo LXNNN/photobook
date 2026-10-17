@@ -35,13 +35,14 @@ npm run preview   # 预览构建产物
 - `ImageElement.imageId` 指向 IndexedDB 里单独存储的 `ImageAsset`（blob 原图 + 200px 缩略图 dataURL）。`crop` 是相对原图 0-1 的裁剪区
 - **裁剪属于「区域」不属于照片**：换位互换只换 `imageId`，永远不搬 `crop`（`projectSlice.swapImages`）。裁剪框的宽高比必须和所在框一致，否则 drawImage 会把照片拉变形——`fitCropToRatio` 是安全网，渲染时都会走一遍
 - **删除相册会连照片记录一起清**：`storage.deleteProject` 先删相册记录，再把「它引用过、且其余相册都不再引用」的 id 从 `images` 表删掉（要查引用是因为备份重复导入会让两本相册共用照片 id；收集 id 用 `collectAssetIds`，别自己遍历 pages）。顺序不能反——中途失败最多留孤儿（无害），反过来会「相册还在、照片没了」
+- **点预览会静默清理未使用的照片**（`utils/photoCleanup.ts`，Editor 的 `handleViewMode` 在 `persistProject` 之后调）：当前相册文件夹里页面不再引用的照片文件删掉（`folderLibrary.removeUnusedAlbumPhotos`，只删这本文件夹里的单张文件）；浏览器库里「所有相册都不引用、且磁盘上也没登记」的记录删掉。引用检查必须是全局的（`getAllProjects` + 内存里当前项目）。**确实删了东西才 `clearHistory()`**——被删照片回不来，旧快照留着 Ctrl+Z 只会撤销出空白图；没删东西时别动撤销历史
 
 ### 页面绘制只有一份实现（最重要）
 
 `src/engine/drawPageContent.ts` 的 `drawPageContent(ctx, page, format, dpi, assets)` 是全站唯一的页面绘制规则，以下所有地方都调它，**任何改动都不能另写一套**：
 
 - 编辑器主画布（`CanvasRenderer`，96dpi）
-- 左侧页缩略图（`PageThumbnail`，先 `ctx.setTransform(scale,...)` 整体缩放，dpi 仍传 96，坐标/字号/折行点与主画布逐字一致）
+- 左侧页缩略图（`PageCanvas`，每页一个独立 canvas；先 `ctx.setTransform(scale,...)` 整体缩放，dpi 仍传 96，坐标/字号/折行点与主画布逐字一致。一个 canvas 里 translate 画两页不行——右页逻辑宽会算成负数，背景画不出来）
 - 首页书架封面（48dpi）
 - 预览页整页渲染（150dpi）
 - PDF 导出（300dpi）
@@ -79,12 +80,17 @@ npm run preview   # 预览构建产物
 
 ### 编辑器（src/pages/Editor.tsx + engine/）
 
-- `CanvasRenderer` 和 `InteractionManager` 是命令式类，通过 ref 持有，**每个项目只创建一次**（重建会中断拖拽）。交互事件通过回调桥接到 Redux dispatch；回调里用 `store.getState()` 取最新页码，避免闭包旧值
+- `CanvasRenderer` 和 `InteractionManager` 是命令式类，通过 ref 持有，**每个项目只创建一次**（重建会中断拖拽）。交互事件通过回调桥接到 Redux dispatch；回调都带元素所在的 `pageIndex`，直接用它 dispatch，别再拿 `currentPageIndex` 猜（双页下它不是元素所在页）
 - `InteractionManager` 处理：命中检测（含旋转包围盒）、8 个缩放手柄 + 旋转手柄、拖拽 + 对齐辅助线吸附、拖到另一张图片上高亮并换位（`swapImages`）、双击文字 → 覆盖 textarea 编辑、双击图片 → 裁剪弹窗
 - 屏幕→画布坐标换算用 `getBoundingClientRect()` 比例，已包含外层 CSS transform（zoom/pan），**不要再手动减 pan 除 zoom**
 - 空图片区域（模板里没填照片的 imageId 为空的元素）：加载资源时**必须跳过**，`getImageAsset(undefined)` 会抛 DataError 中断整个循环，排它后面的照片永远画不出来
 - 编辑器画布固定 96dpi，放大看必糊——这是已知的、用户接受的设计，别顺手"修"（和上传压缩是两回事）
 - **进编辑页一律重置**：Editor 挂载/切 projectId 时 `dispatch(resetEditor())`——页码回第 1 页、zoom/pan/选中全复位（辅助线开关也回默认）。用户明确要求「不要有缓存」，别加「恢复上次编辑位置」这类功能
+- **双页编辑（spread editing）**：数据模型零改动，`pages` 还是平的 A5 单页数组，预览/导出/智能排版不受影响。`spreadGroups(total)` 是唯一分组实现（`utils/spread.ts`）：`[0]`、`[1,2]`、`[3,4]`…，总页数偶数时末页落单。`currentPageIndex` 存**跨页锚页**（组第一页），`activePageIndex` 存**活动页**（新照片/文字/模板落到哪页）；点元素只改 active、不改 current（否则 `setCurrentPage` 清选中会打断跨页 Ctrl 多选）
+- 双页画布永远是两页宽，落单页居中（offset = 页宽/2）。**每页必须 `ctx.clip()` 后再 `translate + drawPageContent`**——drawPageContent 用 ctx 变换反推逻辑画布尺寸，translate 后背景会溢出到隔壁页/桌面
+- 元素回调全部带 `pageIndex`（onSelect/onElementChange/onSwapImages/onTextEdit/onImageCrop）；对齐/换位只限同页；拖拽、缩放、属性面板的 X/Y 都按元素所在页夹紧——照片不能跨中缝
+- 成对增删/排序只走 `spreadLayout` 的 helper：`addPagePair` / `deletePagePair` / `movePages` 配 `insertAfterSpread` / `appendPairIndex` / `movePairBefore` / `anchorAfterDelete`。成对操作天然保持总页数奇偶；别手算下标，算错就把跨页劈开
+- 左侧缩略图是 `SpreadThumbnail`（1~2 个 `PageCanvas`）。封面/结尾落单页居中显示、没有删除 ×、不可拖拽；右键菜单只显示可插入的那一侧（封面没有「上方」、结尾落单页没有「下方」）
 
 ### 预览页（src/pages/Viewer.tsx + page-flip）
 
@@ -115,7 +121,7 @@ npm run preview   # 预览构建产物
 - 磁盘结构：`<用户选的文件夹>\photo-book\{相册名}\相册数据.json + 照片\0001.jpg`；根目录还有 `我的模板.json` 和 `先看我-说明.txt`
 - 权限：浏览器重启后要在点击手势里「重新连接」（授权框选「每次访问时允许」即可长期免点）；文件夹被移动/改名 = `folder-missing`，引导「重新指认文件夹」，数据不丢
 - **合并只走 `runSync` 一条路**（首次启用迁移、重新连接、重新指认、换电脑载入全用同一套规则）：同 id 以文件夹为准；仅文件夹有 → 载入；仅名字撞 → 后并入的改名。改这块前先读 `docs/` 下的文件夹模式设计文档（仅本地）
-- 迁移后**验证磁盘写入成功才**从 IndexedDB 清照片 blob（verifiedIds）；孤儿 blob（没人引用的）不自动清理，历史攒下的也先留着（删除相册时才会顺带清，见「数据模型与单位」）
+- 迁移后**验证磁盘写入成功才**从 IndexedDB 清照片 blob（verifiedIds）；孤儿照片不后台清理，而是在**点预览时**清（当前相册不再引用的磁盘文件 + 全局无人引用的记录，见「数据模型与单位」的预览清理）
 - 在网站上删除相册 = 连磁盘数据一起删（先弹窗确认；不进回收站）
 
 ### Tailwind：非档位透明度类会被静默丢弃

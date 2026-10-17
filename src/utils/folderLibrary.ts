@@ -59,7 +59,8 @@ import { setTemplateChangeHook } from './templateLibrary';
  *
  * 红线（§8）：一切文件动作都在 `photo-book\` 里；写盘全部"写后校验"；
  * 清浏览器大图（stripImageBlob）只在对应照片写盘校验通过之后；
- * 删磁盘只有一处 —— 用户在网站上确认删相册（删前核对相册 id）。
+ * 删磁盘只有两类动作 —— 用户在网站上确认删相册（整个文件夹，删前核对相册 id）、
+ * 点预览时清掉当前相册不再引用的照片文件（removeUnusedAlbumPhotos，只删单张）。
  */
 
 const ALBUM_FORMAT = 1;
@@ -140,7 +141,10 @@ interface AlbumFile {
 interface AlbumEntry {
   /** 相册文件夹名（相对 photo-book 根），创建时定下，网站内改名不同步 */
   folder: string;
-  /** 图片 id → 文件位置（含暂不再用到的旧图，只增不减；删文件只发生在删相册） */
+  /**
+   * 图片 id → 文件位置。日常保存只增不减；点预览时会清掉页面不再引用的
+   * 照片（removeUnusedAlbumPhotos），删整本相册时随文件夹一起没
+   */
   images: Map<string, AlbumImageRecord>;
   nextNumber: number;
   /** 最近一次写清单的项目快照：上传照片时清单要用它 */
@@ -182,6 +186,15 @@ function dropLocations(folder: string): void {
     if (remaining.length) imageLocations.set(id, remaining);
     else imageLocations.delete(id);
   }
+}
+
+/** 移除某个相册文件夹里一张照片的位置登记（清未使用照片时用） */
+function removeLocation(id: string, folder: string): void {
+  const list = imageLocations.get(id);
+  if (!list) return;
+  const remaining = list.filter((l) => l.folder !== folder);
+  if (remaining.length) imageLocations.set(id, remaining);
+  else imageLocations.delete(id);
 }
 
 export function getAlbumFolderName(projectId: string): string | undefined {
@@ -389,6 +402,54 @@ async function copyFromOtherAlbum(id: string, entry: AlbumEntry, targetFile?: st
   } catch {
     return false;
   }
+}
+
+/**
+ * 清理未使用的照片（点预览时调用）：把当前相册文件夹里、页面已经不再引用的
+ * 照片文件删掉，并同步更新 `相册数据.json` 的图片清单。
+ *
+ * 只动这本相册自己的文件夹；其他相册即使和它共用同一张照片也不受影响。
+ * 单个文件删不掉（被占用等）就跳过、保留登记，不阻断预览。
+ * 返回真正删掉的文件数。
+ */
+export async function removeUnusedAlbumPhotos(project: Project): Promise<number> {
+  if (!isConnected()) return 0;
+  const entry = albumEntries.get(project.id);
+  if (!entry) return 0;
+
+  const needed = collectAssetIds(project.pages);
+  const unused = [...entry.images.values()].filter((rec) => !needed.has(rec.id));
+  if (unused.length === 0) return 0;
+
+  let photoDir: FileSystemDirectoryHandle;
+  try {
+    photoDir = await ensurePhotoDir(entry);
+  } catch {
+    return 0;
+  }
+
+  let removed = 0;
+  for (const rec of unused) {
+    try {
+      await photoDir.removeEntry(baseName(rec.file));
+    } catch (err) {
+      // 文件本来就没了：登记照样清掉。其他错误（被占用等）：跳过，保留登记
+      if (!isNotFoundError(err)) continue;
+    }
+    entry.images.delete(rec.id);
+    removeLocation(rec.id, entry.folder);
+    removed += 1;
+  }
+
+  if (removed > 0) {
+    try {
+      // 清单里也别再登记这些照片；写失败不影响已删的文件，下次预览会再清
+      await writeAlbumFile(project, entry);
+    } catch {
+      // 断连/占用：保持现状，等下次保存或预览再对齐
+    }
+  }
+  return removed;
 }
 
 /**

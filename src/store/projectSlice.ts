@@ -2,6 +2,7 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { Project, Page, Element, BookFormat, ImageElement } from '@/types';
 import { PRESET_FORMATS } from '@/types';
 import { isBodyText } from '@/utils/bodyText';
+import { spreadGroupAt } from '@/utils/spreadLayout';
 
 interface ProjectState {
   current: Project | null;
@@ -42,6 +43,13 @@ export const projectSlice = createSlice({
       const previous = state.past.pop()!;
       state.current = previous;
       state.current.updatedAt = Date.now();
+    },
+    /**
+     * 清空撤销历史（预览时清理了未使用的照片之后调用）。
+     * 被删的照片已经不在磁盘/库里，旧快照再留着，撤销回去只会得到空白图。
+     */
+    clearHistory(state) {
+      state.past = [];
     },
     setProjectList(state, action: PayloadAction<Project[]>) {
       state.list = action.payload;
@@ -103,6 +111,46 @@ export const projectSlice = createSlice({
       const { from, to } = action.payload;
       const [moved] = state.current.pages.splice(from, 1);
       state.current.pages.splice(to, 0, moved);
+      state.current.updatedAt = Date.now();
+    },
+    /**
+     * 成对插入两页（双页编辑的新建页面）。`atIndex` 要传 spreadLayout 的
+     * insertAfterSpread / appendPairIndex 算出来的插入位——那是保持整本
+     * 页面配对不断开的唯一下标规则，别手算。
+     * `elements` 只落在这一对的第一页（模板溢出的情况），第二页是空白页。
+     */
+    addPagePair(state, action: PayloadAction<{ atIndex?: number; elements?: Element[] }>) {
+      if (!state.current) return;
+      const total = state.current.pages.length;
+      // 封面永远第一页；越界插到末尾
+      const at = Math.max(1, Math.min(total, action.payload.atIndex ?? total));
+      const blank = (elements: Element[] = []): Page => ({
+        id: generateId(),
+        background: { type: 'color', value: '#ffffff' },
+        elements,
+      });
+      state.current.pages.splice(at, 0, blank(action.payload.elements), blank());
+      state.current.updatedAt = Date.now();
+    },
+    /** 成对删除。只删真正的两页组；封面/结尾落单页删不掉（缩略图上也不给按钮） */
+    deletePagePair(state, action: PayloadAction<number>) {
+      if (!state.current) return;
+      const total = state.current.pages.length;
+      const group = spreadGroupAt(action.payload, total);
+      if (group.length !== 2) return;
+      if (total - 2 < 1) return;
+      state.current.pages.splice(group[0], 2);
+      state.current.updatedAt = Date.now();
+    },
+    /** 把 from 开始的 count 页整体挪到 to（to 是「先删掉这批之后」的插入下标） */
+    movePages(state, action: PayloadAction<{ from: number; to: number; count: number }>) {
+      if (!state.current) return;
+      const pages = state.current.pages;
+      const { from, to, count } = action.payload;
+      if (from < 0 || count <= 0 || from + count > pages.length) return;
+      if (to < 0 || to > pages.length - count) return;
+      const moved = pages.splice(from, count);
+      pages.splice(to, 0, ...moved);
       state.current.updatedAt = Date.now();
     },
     setPageBackground(state, action: PayloadAction<{ pageIndex: number; background: Page['background'] }>) {
@@ -219,6 +267,9 @@ export const {
   deletePage,
   duplicatePage,
   reorderPages,
+  addPagePair,
+  deletePagePair,
+  movePages,
   setPageBackground,
   replacePageElements,
   setPageTemplateId,
@@ -231,6 +282,7 @@ export const {
   sendElementBackward,
   pushHistory,
   undo,
+  clearHistory,
 } = projectSlice.actions;
 
 export default projectSlice.reducer;

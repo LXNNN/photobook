@@ -1,5 +1,7 @@
 import type { Element, BookFormat } from '@/types';
-import { mmToPx, pxToMm } from '@/utils/units';
+import type { SpreadPage } from '@/utils/spreadLayout';
+import type { BoundaryDistance } from './CanvasRenderer';
+import { pxToMm } from '@/utils/units';
 
 export type InteractionMode = 'none' | 'drag' | 'resize' | 'rotate' | 'pan';
 
@@ -8,9 +10,25 @@ interface HitResult {
   handle?: string; // 'tl' | 'tc' | 'tr' | 'ml' | 'mr' | 'bl' | 'bc' | 'br' | 'rotate'
 }
 
+/** 交互管理器眼里的双页画布：元素 + 该页在画布里的横向偏移（mm） */
+interface InteractionPage {
+  index: number;
+  offsetX: number;
+  elements: Element[];
+}
+
+/** 拖拽快照：元素 + 它所在的页（多选可以跨页） */
+interface DragItem {
+  element: Element;
+  pageIndex: number;
+}
+
 /**
- * 交互管理器
- * 处理鼠标事件：命中检测、拖拽、缩放、旋转、画布平移
+ * 交互管理器（双页画布）
+ *
+ * 所有元素坐标仍然是「页内 mm」，画布坐标减去页面偏移才算页内坐标。
+ * 命中检测逐页做；拖拽/缩放按元素所在页夹紧（照片不能跨中缝）；
+ * 对齐、换位只在同一页内发生；对外回调一律带上元素所在页码。
  */
 export class InteractionManager {
   private canvas: HTMLCanvasElement;
@@ -22,22 +40,36 @@ export class InteractionManager {
   private mode: InteractionMode = 'none';
   private startMouse: { x: number; y: number } = { x: 0, y: 0 };
   private startElement: Element | null = null;
-  private dragStartElements: Element[] = [];
+  private startPageIndex: number | null = null;
+  private startPageOffset: number = 0;
+  private dragStartElements: DragItem[] = [];
   private activeHandle: string | null = null;
 
   // 回调
-  onSelect?: (elementId: string, multi: boolean) => void;
-  onClearSelection?: () => void;
-  onElementChange?: (elementId: string, updates: Partial<Element>) => void;
-  onSwapImages?: (sourceId: string, targetId: string) => void;
+  onSelect?: (elementId: string, multi: boolean, pageIndex: number) => void;
+  /** 点空白：pageIndex 是点在哪一页上（点在落单页两侧桌面时为 null） */
+  onClearSelection?: (pageIndex: number | null) => void;
+  onElementChange?: (elementId: string, updates: Partial<Element>, pageIndex: number) => void;
+  onSwapImages?: (sourceId: string, targetId: string, pageIndex: number) => void;
   onPanChange?: (pan: { x: number; y: number }) => void;
   onZoomChange?: (zoom: number, center?: { x: number; y: number }) => void;
+  /** 对齐辅助线（坐标是画布 mm，已含页面偏移） */
   onAlignGuides?: (guides: { vertical: number[]; horizontal: number[] }) => void;
-  onBoundaryDistance?: (dist: { left: number; right: number; top: number; bottom: number; x: number; y: number; width: number; height: number; leftTargetX: number; rightTargetX: number; topTargetY: number; bottomTargetY: number } | null) => void;
+  onBoundaryDistance?: (dist: BoundaryDistance | null) => void;
   onDragStart?: () => void; // 拖拽开始时调用（用于记录历史）
   onHoverTargetChange?: (targetId: string | null) => void; // 拖拽调换位置时的目标变化
-  onTextEdit?: (elementId: string, content: string, x: number, y: number, width: number, height: number, fontSize: number, textAlign: string) => void; // 双击文字开始编辑
-  onImageCrop?: (elementId: string) => void; // 双击图片开始裁剪
+  onTextEdit?: (
+    elementId: string,
+    content: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    fontSize: number,
+    textAlign: string,
+    pageIndex: number
+  ) => void; // 双击文字开始编辑
+  onImageCrop?: (elementId: string, pageIndex: number) => void; // 双击图片开始裁剪
 
   // 拖拽时悬停的目标图片（用于互换）
   private hoverTargetId: string | null = null;
@@ -55,7 +87,7 @@ export class InteractionManager {
   setZoom(zoom: number) { this.zoom = zoom; }
   setPan(pan: { x: number; y: number }) { this.pan = pan; }
 
-  /** 屏幕坐标转画布坐标（mm） */
+  /** 屏幕坐标转画布坐标（mm）。画布坐标 = 页内坐标 + 页面偏移 */
   private screenToCanvas(screenX: number, screenY: number): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     // getBoundingClientRect 已包含外层 CSS transform(translate+scale)，
@@ -67,7 +99,52 @@ export class InteractionManager {
     return { x: pxToMm(cssX, this.dpi), y: pxToMm(cssY, this.dpi) };
   }
 
-  /** 命中检测：从上层到下层遍历 */
+  private pages: InteractionPage[] = [];
+  private selectedIds: string[] = [];
+
+  /** 同步当前跨页（1~2 页） */
+  setPages(pages: SpreadPage[]) {
+    this.pages = pages.map(({ index, offsetX, page }) => ({
+      index,
+      offsetX,
+      elements: page.elements,
+    }));
+  }
+  setSelectedIds(ids: string[]) { this.selectedIds = ids; }
+
+  private pageAt(index: number): InteractionPage | undefined {
+    return this.pages.find((page) => page.index === index);
+  }
+
+  private findElementById(id: string): { element: Element; pageIndex: number; offsetX: number } | null {
+    for (const page of this.pages) {
+      const element = page.elements.find((el) => el.id === id);
+      if (element) return { element, pageIndex: page.index, offsetX: page.offsetX };
+    }
+    return null;
+  }
+
+  /** 画布坐标（mm）落在哪一页上；落单页两侧的桌面返回 null */
+  private pageIndexAtPoint(mmX: number, mmY: number): number | null {
+    if (mmY < 0 || mmY > this.format.height) return null;
+    for (const page of this.pages) {
+      if (mmX >= page.offsetX && mmX <= page.offsetX + this.format.width) return page.index;
+    }
+    return null;
+  }
+
+  /** 跨页命中检测：先找点所在的页，再在页内坐标里找元素 */
+  private hitTestAll(mmX: number, mmY: number): { element: Element; pageIndex: number; offsetX: number } | null {
+    for (const page of this.pages) {
+      const localX = mmX - page.offsetX;
+      if (localX < 0 || localX > this.format.width) continue;
+      const hit = this.hitTest(page.elements, localX, mmY);
+      if (hit) return { element: hit.element, pageIndex: page.index, offsetX: page.offsetX };
+    }
+    return null;
+  }
+
+  /** 命中检测（页内坐标）：从上层到下层遍历 */
   hitTest(elements: Element[], mmX: number, mmY: number): HitResult | null {
     const sorted = [...elements].sort((a, b) => b.zIndex - a.zIndex);
     for (const el of sorted) {
@@ -89,7 +166,7 @@ export class InteractionManager {
     return null;
   }
 
-  /** 检测是否命中控制点 */
+  /** 检测是否命中控制点（页内坐标） */
   hitHandle(el: Element, mmX: number, mmY: number): string | null {
     const handleSizeMm = pxToMm(8, this.dpi) / this.zoom;
     const cx = el.x + el.width / 2;
@@ -128,24 +205,19 @@ export class InteractionManager {
     this.canvas.addEventListener('dblclick', this.handleDblClick);
   }
 
-  private elements: Element[] = [];
-  private selectedIds: string[] = [];
-
-  setElements(elements: Element[]) { this.elements = elements; }
-  setSelectedIds(ids: string[]) { this.selectedIds = ids; }
-
-  /** 对齐检测：检测元素边缘是否和其他元素对齐 */
+  /** 对齐检测：检测元素边缘是否和同一页的其他元素对齐（页内坐标） */
   private detectAlignment(
     el: Element,
     newX: number,
-    newY: number
+    newY: number,
+    pageElements: Element[]
   ): { snappedX: number; snappedY: number; guides: { vertical: number[]; horizontal: number[] } } {
     const tolerance = this.alignTolerance;
     const verticalGuides: number[] = [];
     const horizontalGuides: number[] = [];
 
-    // 收集其他元素的所有边缘线
-    const otherElements = this.elements.filter((e) => e.id !== el.id && !e.locked);
+    // 收集同页其他元素的所有边缘线（跨页元素不参与：它们不在同一张纸上）
+    const otherElements = pageElements.filter((e) => e.id !== el.id && !e.locked);
 
     // 当前元素的 3 条竖线：左、中、右
     const elLeft = newX;
@@ -276,13 +348,14 @@ export class InteractionManager {
     };
   }
 
-  /** 缩放时的对齐检测 */
+  /** 缩放时的对齐检测（页内坐标） */
   private detectResizeAlignment(
     el: Element,
     newX: number,
     newY: number,
     newW: number,
-    newH: number
+    newH: number,
+    pageElements: Element[]
   ): {
     snappedX: number;
     snappedY: number;
@@ -294,7 +367,7 @@ export class InteractionManager {
     const verticalGuides: number[] = [];
     const horizontalGuides: number[] = [];
 
-    const otherElements = this.elements.filter((e) => e.id !== el.id && !e.locked);
+    const otherElements = pageElements.filter((e) => e.id !== el.id && !e.locked);
 
     // 当前元素的 3 条竖线：左、中、右
     const elLeft = newX;
@@ -311,7 +384,7 @@ export class InteractionManager {
     let snappedRight = elRight;
     let snappedBottom = elBottom;
 
-    // 检测页面边界吸附（左、右、上、下）
+    // 检测页面边界吸附（左、右、上、下）—— 页内坐标，永远是这一页自己的边
     const pageLeft = 0;
     const pageRight = this.format.width;
     const pageTop = 0;
@@ -397,8 +470,19 @@ export class InteractionManager {
     };
   }
 
+  /** 把页内竖线辅助线转成画布 mm（横向距线本身在页内，加页面偏移） */
+  private offsetGuides(
+    guides: { vertical: number[]; horizontal: number[] },
+    offsetX: number
+  ): { vertical: number[]; horizontal: number[] } {
+    return {
+      vertical: guides.vertical.map((x) => x + offsetX),
+      horizontal: guides.horizontal,
+    };
+  }
+
   private handleMouseDown = (e: MouseEvent) => {
-    const { x, y } = this.screenToCanvas(e.clientX, e.clientY);
+    const pt = this.screenToCanvas(e.clientX, e.clientY);
     this.startMouse = { x: e.clientX, y: e.clientY };
 
     // 中键或空格拖拽平移
@@ -407,53 +491,58 @@ export class InteractionManager {
       return;
     }
 
-    // 先检测选中元素的控制点
+    // 先检测选中元素的控制点（选中元素可能在任何一页上）
     if (this.selectedIds.length === 1) {
-      const selected = this.elements.find((el) => el.id === this.selectedIds[0]);
+      const selected = this.findElementById(this.selectedIds[0]);
       if (selected) {
-        const handle = this.hitHandle(selected, x, y);
+        const handle = this.hitHandle(selected.element, pt.x - selected.offsetX, pt.y);
         if (handle) {
           this.mode = handle === 'rotate' ? 'rotate' : 'resize';
-          this.startElement = { ...selected };
+          this.startElement = { ...selected.element };
+          this.startPageIndex = selected.pageIndex;
+          this.startPageOffset = selected.offsetX;
           this.activeHandle = handle;
           return;
         }
       }
     }
 
-    // 命中检测
-    const hit = this.hitTest(this.elements, x, y);
+    // 命中检测（跨页）
+    const hit = this.hitTestAll(pt.x, pt.y);
     if (hit) {
       const isMulti = e.ctrlKey || e.shiftKey;
       const isAlreadySelected = this.selectedIds.includes(hit.element.id);
 
       if (isMulti && isAlreadySelected) {
         // Ctrl+点击已选中元素：取消选中，不进入拖拽
-        this.onSelect?.(hit.element.id, true);
+        this.onSelect?.(hit.element.id, true, hit.pageIndex);
         this.mode = 'none';
         return;
       }
 
       if (isMulti) {
         // Ctrl+点击未选中元素：加入多选
-        this.onSelect?.(hit.element.id, true);
-        // 拖拽所有选中元素（包括刚加入的）
+        this.onSelect?.(hit.element.id, true, hit.pageIndex);
+        // 拖拽所有选中元素（包括刚加入的，可能分布在两页上）
         const dragIds = [...this.selectedIds, hit.element.id];
         this.dragStartElements = dragIds
-          .map((id) => this.elements.find((e) => e.id === id))
-          .filter((e): e is Element => !!e)
-          .map((e) => ({ ...e }));
+          .map((id) => this.findElementById(id))
+          .filter((f): f is { element: Element; pageIndex: number; offsetX: number } => !!f)
+          .map((f) => ({ element: { ...f.element }, pageIndex: f.pageIndex }));
       } else {
         // 普通点击：只选中并拖拽当前点击的最上层元素，不受之前多选状态影响
-        this.onSelect?.(hit.element.id, false);
-        this.dragStartElements = [{ ...hit.element }];
+        this.onSelect?.(hit.element.id, false, hit.pageIndex);
+        this.dragStartElements = [{ element: { ...hit.element }, pageIndex: hit.pageIndex }];
       }
 
       this.mode = 'drag';
       this.startElement = { ...hit.element };
+      this.startPageIndex = hit.pageIndex;
+      this.startPageOffset = hit.offsetX;
       this.onDragStart?.(); // 通知外部记录历史
     } else {
-      this.onClearSelection?.();
+      // 点空白：告诉外部点在哪一页上（用来切换活动页），点桌面则传 null
+      this.onClearSelection?.(this.pageIndexAtPoint(pt.x, pt.y));
       this.mode = 'none';
     }
   };
@@ -461,18 +550,18 @@ export class InteractionManager {
   private handleMouseMove = (e: MouseEvent) => {
     if (this.mode === 'none') {
       // 更新鼠标样式
-      const { x, y } = this.screenToCanvas(e.clientX, e.clientY);
+      const pt = this.screenToCanvas(e.clientX, e.clientY);
       if (this.selectedIds.length === 1) {
-        const selected = this.elements.find((el) => el.id === this.selectedIds[0]);
+        const selected = this.findElementById(this.selectedIds[0]);
         if (selected) {
-          const handle = this.hitHandle(selected, x, y);
+          const handle = this.hitHandle(selected.element, pt.x - selected.offsetX, pt.y);
           if (handle) {
             this.canvas.style.cursor = handle === 'rotate' ? 'crosshair' : 'pointer';
             return;
           }
         }
       }
-      const hit = this.hitTest(this.elements, x, y);
+      const hit = this.hitTestAll(pt.x, pt.y);
       this.canvas.style.cursor = hit ? 'move' : 'default';
       return;
     }
@@ -485,24 +574,28 @@ export class InteractionManager {
       return;
     }
 
-    if (!this.startElement) return;
-    const { x, y } = this.screenToCanvas(e.clientX, e.clientY);
+    if (!this.startElement || this.startPageIndex === null) return;
+    const pt = this.screenToCanvas(e.clientX, e.clientY);
     const startCanvas = this.screenToCanvas(this.startMouse.x, this.startMouse.y);
 
     if (this.mode === 'drag') {
-      let dx = x - startCanvas.x;
-      let dy = y - startCanvas.y;
+      const dx = pt.x - startCanvas.x;
+      const dy = pt.y - startCanvas.y;
       let newX = this.startElement.x + dx;
       let newY = this.startElement.y + dy;
 
-      // 检测是否拖到了另一个图片元素上（用于调换位置）
+      // 这次拖拽是不是都落在同一页上（普通情况）；跨页多选时不做吸附/换位
+      const pagesInDrag = new Set(this.dragStartElements.map((item) => item.pageIndex));
+      const singlePage = pagesInDrag.size === 1;
+      const startPage = this.pageAt(this.startPageIndex);
+      const pageElements = startPage?.elements ?? [];
+
+      // 检测是否拖到了同一页的另一个图片元素上（用于调换位置）
       let newHoverTarget: string | null = null;
-      if (this.startElement.type === 'image') {
-        // 计算当前拖拽元素的中心点
+      if (singlePage && this.startElement.type === 'image') {
         const cx = newX + this.startElement.width / 2;
         const cy = newY + this.startElement.height / 2;
-        // 检测中心点是否命中了另一个图片元素（排除当前拖拽的元素）
-        const otherElements = this.elements.filter((el) => el.id !== this.startElement!.id);
+        const otherElements = pageElements.filter((el) => el.id !== this.startElement!.id);
         const hit = this.hitTest(otherElements, cx, cy);
         if (hit && hit.element.type === 'image') {
           newHoverTarget = hit.element.id;
@@ -518,141 +611,169 @@ export class InteractionManager {
       if (this.hoverTargetId) {
         // hover 到目标图片时：不移动位置，不更新元素，只显示高亮
         this.onAlignGuides?.({ vertical: [], horizontal: [] });
-      } else {
-        // 没 hover 到目标图片：正常移动位置 + 对齐检测
+        return;
+      }
+
+      if (singlePage) {
+        // 没 hover 到目标图片：正常移动位置 + 对齐检测（只和同一页的元素比）
         const { snappedX, snappedY, guides } = this.detectAlignment(
           this.startElement,
           newX,
-          newY
+          newY,
+          pageElements
         );
         newX = snappedX;
         newY = snappedY;
 
-        // 通知渲染层画辅助线
-        this.onAlignGuides?.(guides);
+        // 通知渲染层画辅助线（加页面偏移，画到画布坐标）
+        this.onAlignGuides?.(this.offsetGuides(guides, this.startPageOffset));
+      } else {
+        // 跨页多选：元素各在各的页上，吸附和间距标注都没有意义
+        this.onAlignGuides?.({ vertical: [], horizontal: [] });
+      }
 
-        // 计算位移量（基于主拖拽元素的吸附后位置）
-        let deltaX = newX - this.startElement!.x;
-        let deltaY = newY - this.startElement!.y;
+      // 位移量（基于主拖拽元素的吸附后位置）
+      const deltaX = newX - this.startElement.x;
+      const deltaY = newY - this.startElement.y;
 
-        // 计算所有选中元素的新位置，找到整个选中组的边界
+      // 按页分组夹紧：每组元素不能拖出自己那一页（照片不能跨中缝）
+      const byPage = new Map<number, DragItem[]>();
+      for (const item of this.dragStartElements) {
+        const list = byPage.get(item.pageIndex) ?? [];
+        list.push(item);
+        byPage.set(item.pageIndex, list);
+      }
+
+      for (const [pageIndex, items] of byPage) {
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (const el of this.dragStartElements) {
-          const nx = el.x + deltaX;
-          const ny = el.y + deltaY;
+        for (const item of items) {
+          const nx = item.element.x + deltaX;
+          const ny = item.element.y + deltaY;
           minX = Math.min(minX, nx);
-          maxX = Math.max(maxX, nx + el.width);
+          maxX = Math.max(maxX, nx + item.element.width);
           minY = Math.min(minY, ny);
-          maxY = Math.max(maxY, ny + el.height);
+          maxY = Math.max(maxY, ny + item.element.height);
         }
 
-        // 页面边界限制：整个选中组不能拖出页面，到页边时自动停下来
-        if (minX < 0) {
-          deltaX += -minX;
-        }
-        if (maxX > this.format.width) {
-          deltaX -= (maxX - this.format.width);
-        }
-        if (minY < 0) {
-          deltaY += -minY;
-        }
-        if (maxY > this.format.height) {
-          deltaY -= (maxY - this.format.height);
-        }
+        let pageDeltaX = deltaX;
+        let pageDeltaY = deltaY;
+        if (minX < 0) pageDeltaX += -minX;
+        if (maxX > this.format.width) pageDeltaX -= maxX - this.format.width;
+        if (minY < 0) pageDeltaY += -minY;
+        if (maxY > this.format.height) pageDeltaY -= maxY - this.format.height;
 
-        // 重新计算边界（应用边界限制后）
-        minX = Infinity; maxX = -Infinity; minY = Infinity; maxY = -Infinity;
-        for (const el of this.dragStartElements) {
-          const nx = el.x + deltaX;
-          const ny = el.y + deltaY;
-          minX = Math.min(minX, nx);
-          maxX = Math.max(maxX, nx + el.width);
-          minY = Math.min(minY, ny);
-          maxY = Math.max(maxY, ny + el.height);
-        }
-
-        // 计算到周围元素的间距：优先显示到最近元素的距离，没有元素时显示到页边
-        const otherElements = this.elements.filter((e) => !this.selectedIds.includes(e.id));
-        // 左边：找在选中组左侧、垂直方向有重叠的元素中右边缘最大的（最近的）
-        let leftNeighborRight = -Infinity;
-        for (const el of otherElements) {
-          const elRight = el.x + el.width;
-          if (elRight <= minX + 0.01 && el.y < maxY - 0.01 && el.y + el.height > minY + 0.01) {
-            leftNeighborRight = Math.max(leftNeighborRight, elRight);
+        // 夹紧后重新算一次边界（单页时后面要拿它算间距）
+        if (singlePage) {
+          minX = Infinity; maxX = -Infinity; minY = Infinity; maxY = -Infinity;
+          for (const item of items) {
+            const nx = item.element.x + pageDeltaX;
+            const ny = item.element.y + pageDeltaY;
+            minX = Math.min(minX, nx);
+            maxX = Math.max(maxX, nx + item.element.width);
+            minY = Math.min(minY, ny);
+            maxY = Math.max(maxY, ny + item.element.height);
           }
-        }
-        // 右边：找在选中组右侧、垂直方向有重叠的元素中左边缘最小的（最近的）
-        let rightNeighborLeft = Infinity;
-        for (const el of otherElements) {
-          if (el.x >= maxX - 0.01 && el.y < maxY - 0.01 && el.y + el.height > minY + 0.01) {
-            rightNeighborLeft = Math.min(rightNeighborLeft, el.x);
-          }
-        }
-        // 上边：找在选中组上方、水平方向有重叠的元素中下边缘最大的（最近的）
-        let topNeighborBottom = -Infinity;
-        for (const el of otherElements) {
-          const elBottom = el.y + el.height;
-          if (elBottom <= minY + 0.01 && el.x < maxX - 0.01 && el.x + el.width > minX + 0.01) {
-            topNeighborBottom = Math.max(topNeighborBottom, elBottom);
-          }
-        }
-        // 下边：找在选中组下方、水平方向有重叠的元素中上边缘最小的（最近的）
-        let bottomNeighborTop = Infinity;
-        for (const el of otherElements) {
-          if (el.y >= maxY - 0.01 && el.x < maxX - 0.01 && el.x + el.width > minX + 0.01) {
-            bottomNeighborTop = Math.min(bottomNeighborTop, el.y);
-          }
+          this.emitBoundaryDistance(pageIndex, pageElements, items, minX, minY, maxX, maxY);
         }
 
-        // 确定每个方向的距离和辅助线终点：有相邻元素用元素间距，否则用页边距离
-        const hasLeftNeighbor = leftNeighborRight > -Infinity;
-        const hasRightNeighbor = rightNeighborLeft < Infinity;
-        const hasTopNeighbor = topNeighborBottom > -Infinity;
-        const hasBottomNeighbor = bottomNeighborTop < Infinity;
-
-        const leftDist = hasLeftNeighbor ? minX - leftNeighborRight : minX;
-        const rightDist = hasRightNeighbor ? rightNeighborLeft - maxX : this.format.width - maxX;
-        const topDist = hasTopNeighbor ? minY - topNeighborBottom : minY;
-        const bottomDist = hasBottomNeighbor ? bottomNeighborTop - maxY : this.format.height - maxY;
-
-        // 边界距离基于整个选中组（多选时显示整体边界距离）
-        this.onBoundaryDistance?.({
-          left: Math.round(leftDist * 10) / 10,
-          right: Math.round(rightDist * 10) / 10,
-          top: Math.round(topDist * 10) / 10,
-          bottom: Math.round(bottomDist * 10) / 10,
-          x: minX,
-          y: minY,
-          width: maxX - minX,
-          height: maxY - minY,
-          leftTargetX: hasLeftNeighbor ? leftNeighborRight : 0,
-          rightTargetX: hasRightNeighbor ? rightNeighborLeft : this.format.width,
-          topTargetY: hasTopNeighbor ? topNeighborBottom : 0,
-          bottomTargetY: hasBottomNeighbor ? bottomNeighborTop : this.format.height,
-        });
-
-        // 移动所有选中元素（多选整体移动）
-        for (const el of this.dragStartElements) {
-          this.onElementChange?.(el.id, {
-            x: el.x + deltaX,
-            y: el.y + deltaY,
-          });
+        for (const item of items) {
+          this.onElementChange?.(
+            item.element.id,
+            { x: item.element.x + pageDeltaX, y: item.element.y + pageDeltaY },
+            pageIndex
+          );
         }
       }
     } else if (this.mode === 'resize' && this.activeHandle) {
-      this.handleResize(x, y, e.shiftKey);
+      this.handleResize(pt.x - this.startPageOffset, pt.y, e.shiftKey);
     } else if (this.mode === 'rotate') {
+      const localX = pt.x - this.startPageOffset;
       const cx = this.startElement.x + this.startElement.width / 2;
       const cy = this.startElement.y + this.startElement.height / 2;
-      const angle = (Math.atan2(y - cy, x - cx) * 180) / Math.PI + 90;
+      const angle = (Math.atan2(pt.y - cy, localX - cx) * 180) / Math.PI + 90;
       const snapped = e.shiftKey ? Math.round(angle / 15) * 15 : angle;
-      this.onElementChange?.(this.startElement.id, { rotation: snapped });
+      if (this.startPageIndex !== null) {
+        this.onElementChange?.(this.startElement.id, { rotation: snapped }, this.startPageIndex);
+      }
     }
   };
 
+  /** 计算并上报拖拽组到周围元素/页边的间距（单页拖拽时才有意义） */
+  private emitBoundaryDistance(
+    _pageIndex: number,
+    pageElements: Element[],
+    dragItems: DragItem[],
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number
+  ) {
+    const offsetX = this.startPageOffset;
+    const dragIds = new Set(dragItems.map((item) => item.element.id));
+    const otherElements = pageElements.filter((e) => !dragIds.has(e.id));
+
+    // 左边：找在选中组左侧、垂直方向有重叠的元素中右边缘最大的（最近的）
+    let leftNeighborRight = -Infinity;
+    for (const el of otherElements) {
+      const elRight = el.x + el.width;
+      if (elRight <= minX + 0.01 && el.y < maxY - 0.01 && el.y + el.height > minY + 0.01) {
+        leftNeighborRight = Math.max(leftNeighborRight, elRight);
+      }
+    }
+    // 右边：找在选中组右侧、垂直方向有重叠的元素中左边缘最小的（最近的）
+    let rightNeighborLeft = Infinity;
+    for (const el of otherElements) {
+      if (el.x >= maxX - 0.01 && el.y < maxY - 0.01 && el.y + el.height > minY + 0.01) {
+        rightNeighborLeft = Math.min(rightNeighborLeft, el.x);
+      }
+    }
+    // 上边：找在选中组上方、水平方向有重叠的元素中下边缘最大的（最近的）
+    let topNeighborBottom = -Infinity;
+    for (const el of otherElements) {
+      const elBottom = el.y + el.height;
+      if (elBottom <= minY + 0.01 && el.x < maxX - 0.01 && el.x + el.width > minX + 0.01) {
+        topNeighborBottom = Math.max(topNeighborBottom, elBottom);
+      }
+    }
+    // 下边：找在选中组下方、水平方向有重叠的元素中上边缘最小的（最近的）
+    let bottomNeighborTop = Infinity;
+    for (const el of otherElements) {
+      if (el.y >= maxY - 0.01 && el.x < maxX - 0.01 && el.x + el.width > minX + 0.01) {
+        bottomNeighborTop = Math.min(bottomNeighborTop, el.y);
+      }
+    }
+
+    const hasLeftNeighbor = leftNeighborRight > -Infinity;
+    const hasRightNeighbor = rightNeighborLeft < Infinity;
+    const hasTopNeighbor = topNeighborBottom > -Infinity;
+    const hasBottomNeighbor = bottomNeighborTop < Infinity;
+
+    const leftDist = hasLeftNeighbor ? minX - leftNeighborRight : minX;
+    const rightDist = hasRightNeighbor ? rightNeighborLeft - maxX : this.format.width - maxX;
+    const topDist = hasTopNeighbor ? minY - topNeighborBottom : minY;
+    const bottomDist = hasBottomNeighbor ? bottomNeighborTop - maxY : this.format.height - maxY;
+
+    // 上报的所有 x 都加上页面偏移，渲染器按画布坐标直接画
+    this.onBoundaryDistance?.({
+      left: Math.round(leftDist * 10) / 10,
+      right: Math.round(rightDist * 10) / 10,
+      top: Math.round(topDist * 10) / 10,
+      bottom: Math.round(bottomDist * 10) / 10,
+      x: minX + offsetX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+      leftTargetX: (hasLeftNeighbor ? leftNeighborRight : 0) + offsetX,
+      rightTargetX: (hasRightNeighbor ? rightNeighborLeft : this.format.width) + offsetX,
+      topTargetY: hasTopNeighbor ? topNeighborBottom : 0,
+      bottomTargetY: hasBottomNeighbor ? bottomNeighborTop : this.format.height,
+    });
+  }
+
   private handleResize(x: number, y: number, shiftKey: boolean = false) {
-    if (!this.startElement || !this.activeHandle) return;
+    if (!this.startElement || !this.activeHandle || this.startPageIndex === null) return;
     const el = this.startElement;
+    const pageElements = this.pageAt(this.startPageIndex)?.elements ?? [];
     let { x: nx, y: ny, width: nw, height: nh } = el;
 
     const aspect = el.width / el.height;
@@ -705,7 +826,7 @@ export class InteractionManager {
 
     // 缩放时也检测对齐
     const { snappedX, snappedY, snappedRight, snappedBottom, guides } = this.detectResizeAlignment(
-      el, nx, ny, nw, nh
+      el, nx, ny, nw, nh, pageElements
     );
 
     // 根据拖拽的方向，只吸附对应的边
@@ -718,10 +839,10 @@ export class InteractionManager {
       finalNy = snappedY;
     }
 
-    // 通知渲染层画辅助线
-    this.onAlignGuides?.(guides);
+    // 通知渲染层画辅助线（加页面偏移）
+    this.onAlignGuides?.(this.offsetGuides(guides, this.startPageOffset));
 
-    // 页面边界限制：缩放时元素不能超出页面
+    // 页面边界限制：缩放时元素不能超出这一页（中缝另一侧也不能去）
     if (finalNx < 0) {
       nw += finalNx; // 宽度减少
       finalNx = 0;
@@ -741,7 +862,11 @@ export class InteractionManager {
     nw = Math.max(5, nw);
     nh = Math.max(5, nh);
 
-    this.onElementChange?.(el.id, { x: finalNx, y: finalNy, width: nw, height: nh });
+    this.onElementChange?.(
+      el.id,
+      { x: finalNx, y: finalNy, width: nw, height: nh },
+      this.startPageIndex
+    );
   }
 
   private handleMouseUp = () => {
@@ -753,17 +878,18 @@ export class InteractionManager {
     // 清除边界距离显示
     this.onBoundaryDistance?.(null);
 
-    // 如果拖拽到了另一个图片上，触发调换位置
-    if (this.mode === 'drag' && this.hoverTargetId && this.startElement) {
+    // 如果拖拽到了另一个图片上，触发调换位置（只在同一页里换）
+    if (this.mode === 'drag' && this.hoverTargetId && this.startElement && this.startPageIndex !== null) {
       // 换位前先把元素放回拖拽起点。
       // 拖拽过程中它一直跟着鼠标走（hover 到目标图片之后才停下），要是就这么换，
       // 被换过来的那张会落在"漂移后停住的位置"上，而它自己的原位反倒空着 ——
       // 换位要的是两张照片互换格子，不是拖到哪儿算哪儿。
-      this.onElementChange?.(this.startElement.id, {
-        x: this.startElement.x,
-        y: this.startElement.y,
-      });
-      this.onSwapImages?.(this.startElement.id, this.hoverTargetId);
+      this.onElementChange?.(
+        this.startElement.id,
+        { x: this.startElement.x, y: this.startElement.y },
+        this.startPageIndex
+      );
+      this.onSwapImages?.(this.startElement.id, this.hoverTargetId, this.startPageIndex);
     }
 
     // 重置 hover 目标
@@ -773,6 +899,7 @@ export class InteractionManager {
     this.canvas.style.cursor = 'default';
     this.mode = 'none';
     this.startElement = null;
+    this.startPageIndex = null;
     this.activeHandle = null;
   };
 
@@ -786,7 +913,7 @@ export class InteractionManager {
   /** 双击元素：文字编辑 / 图片裁剪 */
   private handleDblClick = (e: MouseEvent) => {
     const mm = this.screenToCanvas(e.clientX, e.clientY);
-    const hit = this.hitTest(this.elements, mm.x, mm.y);
+    const hit = this.hitTestAll(mm.x, mm.y);
     if (!hit) return;
 
     if (hit.element.type === 'text') {
@@ -799,10 +926,11 @@ export class InteractionManager {
         textEl.width,
         textEl.height,
         textEl.fontSize || 12,
-        textEl.textAlign || 'left'
+        textEl.textAlign || 'left',
+        hit.pageIndex
       );
     } else if (hit.element.type === 'image') {
-      this.onImageCrop?.(hit.element.id);
+      this.onImageCrop?.(hit.element.id, hit.pageIndex);
     }
   };
 

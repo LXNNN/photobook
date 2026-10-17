@@ -3,6 +3,7 @@ import type { EditorState } from '@/types';
 
 const initialState: EditorState = {
   currentPageIndex: 0,
+  activePageIndex: 0,
   selectedElementIds: [],
   zoom: 1,
   pan: { x: 0, y: 0 },
@@ -14,9 +15,15 @@ export const editorSlice = createSlice({
   name: 'editor',
   initialState,
   reducers: {
+    /** 切到某个跨页（参数是锚页）：活动页跟着回到这一组的第一页，选中清空 */
     setCurrentPage(state, action: PayloadAction<number>) {
       state.currentPageIndex = action.payload;
+      state.activePageIndex = action.payload;
       state.selectedElementIds = [];
+    },
+    /** 切换活动页（点跨页里的另一页/点元素）：不动选中，支持跨页多选 */
+    setActivePage(state, action: PayloadAction<number>) {
+      state.activePageIndex = action.payload;
     },
     selectElement(state, action: PayloadAction<string>) {
       state.selectedElementIds = [action.payload];
@@ -61,6 +68,7 @@ export const editorSlice = createSlice({
 
 export const {
   setCurrentPage,
+  setActivePage,
   selectElement,
   multiSelectElement,
   clearSelection,

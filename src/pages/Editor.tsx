@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch, store } from '@/store';
-import { setCurrentProject, addElement, updateElement, deleteElement, addPage, deletePage, updateProjectName, reorderPages, swapImages, pushHistory, undo, setBodyStyle } from '@/store/projectSlice';
-import { selectElement, multiSelectElement, clearSelection, setZoom, setPan, resetZoom, resetEditor, setCurrentPage as setCurrentPageAction } from '@/store/editorSlice';
+import { setCurrentProject, addElement, updateElement, deleteElement, addPagePair, deletePagePair, movePages, updateProjectName, swapImages, pushHistory, undo, clearHistory, setBodyStyle } from '@/store/projectSlice';
+import { selectElement, multiSelectElement, clearSelection, setZoom, setPan, resetEditor, setCurrentPage as setCurrentPageAction, setActivePage } from '@/store/editorSlice';
 import { setMode } from '@/store/uiSlice';
+import { buildSpreadPages, anchorOf, spreadGroupAt, spreadAnchors, findElementPage, insertAfterSpread, appendPairIndex, movePairBefore, anchorAfterDelete } from '@/utils/spreadLayout';
+import { spreadGroups } from '@/utils/spread';
 import { getProject } from '@/utils/storage';
 import { saveImageAsset, getImageAsset } from '@/utils/assetStore';
 import { subscribeFolderStatus, getFolderStatus } from '@/utils/folderMode';
@@ -13,7 +15,7 @@ import { InteractionManager } from '@/engine/InteractionManager';
 import { mmToPx, generateId } from '@/utils/units';
 import { fileToImageAsset, getImageURL, blobToDataURL } from '@/utils/image';
 import type { ImageElement, TextElement, Element } from '@/types';
-import PageThumbnail from '@/components/editor/PageThumbnail';
+import SpreadThumbnail from '@/components/editor/SpreadThumbnail';
 import PropertyPanel from '@/components/editor/PropertyPanel';
 import TemplatePanel from '@/components/editor/TemplatePanel';
 import ImageCropper from '@/components/editor/ImageCropper';
@@ -25,6 +27,7 @@ import {
   DEFAULT_TITLE_FONT_SIZE,
   SHOW_BODY_STYLE_ENTRY,
 } from '@/utils/bodyText';
+import { cleanupUnusedPhotos } from '@/utils/photoCleanup';
 
 // 启动守卫在 StrictMode 下会跑两遍，提示只弹一次
 let folderGuardAlerted = false;
@@ -35,6 +38,7 @@ export default function Editor() {
   const dispatch = useAppDispatch();
   const project = useAppSelector((s) => s.project.current);
   const currentPageIndex = useAppSelector((s) => s.editor.currentPageIndex);
+  const activePageIndex = useAppSelector((s) => s.editor.activePageIndex);
   const selectedIds = useAppSelector((s) => s.editor.selectedElementIds);
   const zoom = useAppSelector((s) => s.editor.zoom);
   const pan = useAppSelector((s) => s.editor.pan);
@@ -52,11 +56,13 @@ export default function Editor() {
   const [bodyStyleOpen, setBodyStyleOpen] = useState(false); // 「🎨 正文样式」弹窗
   const [addTextOpen, setAddTextOpen] = useState(false); // 「📝 添加文字」的小菜单
   const [leftTab, setLeftTab] = useState<'pages' | 'templates'>('pages');
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  // 正在编辑的文字元素
+  // 拖拽排序：存的都是跨页锚页（一组两页一起移动）
+  const [dragAnchor, setDragAnchor] = useState<number | null>(null);
+  const [dragOverAnchor, setDragOverAnchor] = useState<number | null>(null);
+  // 正在编辑的文字元素（带页码：双页下文本框要落在它所在的那一页上）
   const [editingText, setEditingText] = useState<{
     elementId: string;
+    pageIndex: number;
     content: string;
     x: number;
     y: number;
@@ -66,9 +72,14 @@ export default function Editor() {
     textAlign: string;
   } | null>(null);
   const editingTextRef = useRef<HTMLTextAreaElement>(null);
+  // 切页/切跨页前兜底保存用（textarea 失焦通常已经先保存过，这里防漏）
+  const editingTextStateRef = useRef<typeof editingText>(null);
+  useEffect(() => {
+    editingTextStateRef.current = editingText;
+  }, [editingText]);
   // 正在裁剪的图片。id 和 URL 绑成一份状态存：分成两个 state 的话，切换到下一个
   // 元素时会出现「新元素的 id + 上一个元素的 URL」的中间态，对话框会先闪一下上一张照片
-  const [cropping, setCropping] = useState<{ id: string; url: string } | null>(null);
+  const [cropping, setCropping] = useState<{ id: string; pageIndex: number; url: string } | null>(null);
   const folderStatus = useSyncExternalStore(subscribeFolderStatus, getFolderStatus);
   /** 有改动还没落盘（防抖没到点）：页面隐藏时补一次保存 */
   const dirtyRef = useRef(false);
@@ -93,11 +104,53 @@ export default function Editor() {
     dispatch(resetEditor());
   }, [dispatch, projectId]);
 
-  // 加载裁剪图片的 URL
+  // 当前跨页：currentPageIndex 存的是锚页（组的第一页），画布上显示 1~2 页。
+  // 落单页（封面/结尾）居中，配对页一左一右 —— 偏移规则全在 spreadLayout 里。
+  const spreadPages = useMemo(
+    () => (project ? buildSpreadPages(project.pages, currentPageIndex, project.format.width) : []),
+    [project, currentPageIndex]
+  );
+  const spreadGroup = project ? spreadGroupAt(currentPageIndex, project.pages.length) : [];
+  // 活动页越界兜底（撤销后页数变少时会出现）：任何需要页码的地方都用这个
+  const safeActivePageIndex = project
+    ? Math.max(0, Math.min(project.pages.length - 1, activePageIndex))
+    : 0;
+
+  // 页码兜底：undo 之后 pages 可能变短、currentPageIndex / activePageIndex 可能越界。
+  // 锚页修正会清空选中（setCurrentPage 的既有行为）；活动页跑出当前跨页时回到锚页。
+  useEffect(() => {
+    if (!project) return;
+    const total = project.pages.length;
+    const anchor = anchorOf(currentPageIndex, total);
+    if (anchor !== currentPageIndex) {
+      dispatch(setCurrentPageAction(anchor));
+      return;
+    }
+    const group = spreadGroupAt(currentPageIndex, total);
+    if (!group.includes(activePageIndex)) {
+      dispatch(setActivePage(anchor));
+    }
+  }, [project, currentPageIndex, activePageIndex, dispatch]);
+
+  /** 切页/切跨页前把还没提交的文字编辑保存掉（textarea 失焦通常已先保存） */
+  const flushEditingText = useCallback(() => {
+    const current = editingTextStateRef.current;
+    if (!current) return;
+    editingTextStateRef.current = null;
+    dispatch(pushHistory());
+    dispatch(updateElement({
+      pageIndex: current.pageIndex,
+      elementId: current.elementId,
+      updates: { content: current.content },
+    }));
+    setEditingText(null);
+  }, [dispatch]);
+
+  // 加载裁剪图片的 URL（按裁剪弹窗记录的页码找元素，双页下不能再用 currentPageIndex）
   useEffect(() => {
     const id = cropping?.id;
     const el = id && project
-      ? project.pages[currentPageIndex]?.elements.find((e) => e.id === id)
+      ? project.pages[cropping.pageIndex]?.elements.find((e) => e.id === id)
       : undefined;
     const imageId = el && el.type === 'image' ? (el as any).imageId : undefined;
     if (!id || !imageId) {
@@ -112,10 +165,10 @@ export default function Editor() {
       const asset = await getImageAsset(imageId);
       if (cancelled) return;
       // 照片取不到也关掉：取不到就没法裁
-      setCropping(asset ? { id, url: getImageURL(asset) } : null);
+      setCropping(asset ? { id, pageIndex: cropping.pageIndex, url: getImageURL(asset) } : null);
     })();
     return () => { cancelled = true; };
-  }, [cropping?.id, project, currentPageIndex]);
+  }, [cropping?.id, cropping?.pageIndex, project]);
 
   // 加载项目
   useEffect(() => {
@@ -137,6 +190,30 @@ export default function Editor() {
     })();
   }, [projectId, dispatch, navigate]);
 
+  /**
+   * 缩放到「整个跨页刚好放进画布区域」并居中。
+   * transformOrigin 是 top left，画布本身又被 flex 居中，所以缩放后要用 pan
+   * 补回居中差 = 原始尺寸 × (1 - zoom) / 2。
+   */
+  const fitToView = useCallback(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    if (cw <= 0 || ch <= 0) return;
+    const padding = 48;
+    const nextZoom = Math.max(
+      0.1,
+      Math.min(1, (cw - padding) / canvas.width, (ch - padding) / canvas.height)
+    );
+    dispatch(setZoom(nextZoom));
+    dispatch(setPan({
+      x: (canvas.width * (1 - nextZoom)) / 2,
+      y: (canvas.height * (1 - nextZoom)) / 2,
+    }));
+  }, [dispatch]);
+
   // 初始化渲染器和交互管理器（canvas 挂载时执行一次）
   useEffect(() => {
     if (!canvasRef.current || !project) return;
@@ -147,37 +224,39 @@ export default function Editor() {
     const interaction = new InteractionManager(canvasRef.current, project.format, 96);
     interactionRef.current = interaction;
 
-    interaction.onSelect = (id, multi) => {
+    // 所有元素回调都带页码：双页画布上元素可能在任何一页，按元素真实的页去改
+    interaction.onSelect = (id, multi, pageIndex) => {
       if (multi) {
         dispatch(multiSelectElement(id));
       } else {
         dispatch(selectElement(id));
       }
+      // 点哪页哪页就是活动页 —— 点元素不清选中，跨页 Ctrl 多选才不会被切断
+      dispatch(setActivePage(pageIndex));
     };
-    interaction.onClearSelection = () => {
+    interaction.onClearSelection = (pageIndex) => {
       dispatch(clearSelection());
+      if (pageIndex !== null) dispatch(setActivePage(pageIndex));
     };
-    // 注意：onElementChange 用 store.getState() 获取最新 pageIndex，避免闭包旧值
-    interaction.onElementChange = (id, updates) => {
-      const pageIdx = store.getState().editor.currentPageIndex;
-      dispatch(updateElement({ pageIndex: pageIdx, elementId: id, updates }));
+    interaction.onElementChange = (id, updates, pageIndex) => {
+      dispatch(updateElement({ pageIndex, elementId: id, updates }));
     };
-    interaction.onSwapImages = (sourceId, targetId) => {
-      const pageIdx = store.getState().editor.currentPageIndex;
-      dispatch(swapImages({ pageIndex: pageIdx, sourceId, targetId }));
+    interaction.onSwapImages = (sourceId, targetId, pageIndex) => {
+      dispatch(swapImages({ pageIndex, sourceId, targetId }));
     };
     interaction.onHoverTargetChange = (targetId) => {
       setHoverTargetId(targetId);
     };
-    interaction.onTextEdit = (elementId, content, x, y, width, height, fontSize, textAlign) => {
-      setEditingText({ elementId, content, x, y, width, height, fontSize, textAlign });
+    interaction.onTextEdit = (elementId, content, x, y, width, height, fontSize, textAlign, pageIndex) => {
+      setEditingText({ elementId, pageIndex, content, x, y, width, height, fontSize, textAlign });
     };
-    interaction.onImageCrop = (elementId) => {
+    interaction.onImageCrop = (elementId, pageIndex) => {
       // 先选中这个图片元素，再打开裁剪
       dispatch(selectElement(elementId));
+      dispatch(setActivePage(pageIndex));
       // URL 先留空，等上面那个 effect 取到照片再开对话框。
       // 直接沿用上一次的 URL 的话，会先闪一下上一张照片
-      setCropping({ id: elementId, url: '' });
+      setCropping({ id: elementId, pageIndex, url: '' });
     };
     interaction.onAlignGuides = (guides) => {
       rendererRef.current?.setAlignGuides(guides);
@@ -205,7 +284,11 @@ export default function Editor() {
       dispatch(setZoom(newZoom));
     };
 
+    // 进入编辑页默认「适应窗口」：双页比原来的单页宽一倍，1:1 多半放不下
+    const raf = requestAnimationFrame(() => fitToView());
+
     return () => {
+      cancelAnimationFrame(raf);
       renderer.destroy();
       interaction.destroy();
     };
@@ -214,50 +297,54 @@ export default function Editor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!project]);
 
-  // 渲染当前页
+  // 渲染当前跨页（1~2 页）
   useEffect(() => {
     if (!rendererRef.current || !project) return;
-    const page = project.pages[currentPageIndex];
-    if (!page) return;
 
-    // 加载图片资源
+    // 加载跨页里所有页面用到的图片资源
     (async () => {
-      for (const el of page.elements) {
-        if (el.type === 'image' || el.type === 'sticker') {
-          const id = el.type === 'image' ? el.imageId : el.stickerId;
-          // 模板留下的空图片区域没有 imageId，必须跳过：不跳的话
-          // getImageAsset(undefined) 会抛 DataError 把整个循环中断，
-          // 排在这个空位后面的照片就再也加载不到了（画布上一直是灰色占位）
-          if (!id) continue;
-          if (!rendererRef.current!.getCachedImage(id)) {
-            const asset = await getImageAsset(id);
-            if (asset) {
-              const url = getImageURL(asset);
-              const img = new Image();
-              img.onload = () => {
-                rendererRef.current!.cacheImage(id, img);
-              };
-              img.src = url;
+      for (const spreadPage of spreadPages) {
+        for (const el of spreadPage.page.elements) {
+          if (el.type === 'image' || el.type === 'sticker') {
+            const id = el.type === 'image' ? el.imageId : el.stickerId;
+            // 模板留下的空图片区域没有 imageId，必须跳过：不跳的话
+            // getImageAsset(undefined) 会抛 DataError 把整个循环中断，
+            // 排在这个空位后面的照片就再也加载不到了（画布上一直是灰色占位）
+            if (!id) continue;
+            if (!rendererRef.current!.getCachedImage(id)) {
+              const asset = await getImageAsset(id);
+              if (asset) {
+                const url = getImageURL(asset);
+                const img = new Image();
+                img.onload = () => {
+                  rendererRef.current!.cacheImage(id, img);
+                };
+                img.src = url;
+              }
             }
           }
         }
       }
     })();
 
-    rendererRef.current.render(page, selectedIds, showGuides, showBleed, hoverTargetId);
-  }, [project, currentPageIndex, selectedIds, showGuides, showBleed, hoverTargetId]);
+    rendererRef.current.render(
+      spreadPages,
+      selectedIds,
+      showGuides,
+      showBleed,
+      hoverTargetId,
+      safeActivePageIndex
+    );
+  }, [project, spreadPages, selectedIds, showGuides, showBleed, hoverTargetId, safeActivePageIndex]);
 
   // 更新交互管理器状态
   useEffect(() => {
-    if (!interactionRef.current || !project) return;
-    const page = project.pages[currentPageIndex];
-    if (page) {
-      interactionRef.current.setElements(page.elements);
-      interactionRef.current.setSelectedIds(selectedIds);
-      interactionRef.current.setZoom(zoom);
-      interactionRef.current.setPan(pan);
-    }
-  }, [project, currentPageIndex, selectedIds, zoom, pan]);
+    if (!interactionRef.current) return;
+    interactionRef.current.setPages(spreadPages);
+    interactionRef.current.setSelectedIds(selectedIds);
+    interactionRef.current.setZoom(zoom);
+    interactionRef.current.setPan(pan);
+  }, [spreadPages, selectedIds, zoom, pan]);
 
   // 画布 CSS 变换（缩放+平移）
   const canvasStyle = {
@@ -312,17 +399,25 @@ export default function Editor() {
         const asset = await fileToImageAsset(file);
         await saveImageAsset(project.id, asset);
 
-        // 如果当前选中了一个图片元素，直接替换它的图片
-        const page = project.pages[currentPageIndex];
-        const selectedImageElement = page.elements.find(
-          (el) => el.type === 'image' && selectedIds.includes(el.id)
-        ) as ImageElement | undefined;
+        // 如果当前跨页选中了一个图片元素，直接替换它的图片（可能在另一页上）
+        let selectedImageElement: { element: ImageElement; pageIndex: number } | undefined;
+        for (const spreadPage of spreadPages) {
+          const el = spreadPage.page.elements.find(
+            (e) => e.type === 'image' && selectedIds.includes(e.id)
+          ) as ImageElement | undefined;
+          if (el) {
+            selectedImageElement = { element: el, pageIndex: spreadPage.index };
+            break;
+          }
+        }
+        // 没有替换目标时，新增的照片落在活动页（点哪页就是哪页）
+        const page = project.pages[safeActivePageIndex];
 
         if (selectedImageElement) {
           // 替换选中元素的图片
           dispatch(updateElement({
-            pageIndex: currentPageIndex,
-            elementId: selectedImageElement.id,
+            pageIndex: selectedImageElement.pageIndex,
+            elementId: selectedImageElement.element.id,
             updates: { imageId: asset.id, crop: { x: 0, y: 0, width: 1, height: 1 } },
           }));
         } else {
@@ -351,7 +446,7 @@ export default function Editor() {
             crop: { x: 0, y: 0, width: 1, height: 1 },
           };
 
-          dispatch(addElement({ pageIndex: currentPageIndex, element: newElement }));
+          dispatch(addElement({ pageIndex: safeActivePageIndex, element: newElement }));
           dispatch(selectElement(newElement.id));
         }
 
@@ -373,7 +468,7 @@ export default function Editor() {
   // 之后「🎨 正文样式」和「全局改标题样式」才知道该不该管这段字。
   const handleAddText = (kind: 'title' | 'body') => {
     if (!project) return;
-    const page = project.pages[currentPageIndex];
+    const page = project.pages[safeActivePageIndex];
     const isTitle = kind === 'title';
     const newElement: TextElement = {
       id: generateId(),
@@ -403,7 +498,7 @@ export default function Editor() {
     // 压历史：跟其它改动操作一个规矩（删元素、加页、套模板都压），
     // 不然加了字按 Ctrl+Z 撤的是上一步别的操作，这行字还赖着不走
     dispatch(pushHistory());
-    dispatch(addElement({ pageIndex: currentPageIndex, element: newElement }));
+    dispatch(addElement({ pageIndex: safeActivePageIndex, element: newElement }));
     dispatch(selectElement(newElement.id));
   };
 
@@ -415,12 +510,13 @@ export default function Editor() {
     setBodyStyleOpen(false);
   };
 
-  // 删除选中元素
+  // 删除选中元素（跨页多选时逐个按元素所在的页删）
   const handleDeleteSelected = () => {
     if (selectedIds.length === 0 || !project) return;
     dispatch(pushHistory());
     for (const id of selectedIds) {
-      dispatch(deleteElement({ pageIndex: currentPageIndex, elementId: id }));
+      const pageIndex = findElementPage(project.pages, id);
+      if (pageIndex >= 0) dispatch(deleteElement({ pageIndex, elementId: id }));
     }
     dispatch(clearSelection());
   };
@@ -455,7 +551,7 @@ export default function Editor() {
       }
       if (e.ctrlKey && e.key === '0') {
         e.preventDefault();
-        dispatch(resetZoom());
+        fitToView();
       }
       // Ctrl+Z 撤销
       if (e.ctrlKey && e.key === 'z') {
@@ -465,21 +561,110 @@ export default function Editor() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedIds, zoom, dispatch, handleSave, bodyStyleOpen]);
+  }, [selectedIds, zoom, dispatch, handleSave, bodyStyleOpen, fitToView]);
 
   // 切换到浏览模式
   const handleViewMode = async () => {
     if (!project) return;
-    // 先保存项目（IndexedDB + 文件夹），再跳转预览
+    // 先把当前编辑保存进 IndexedDB / 文件夹，再跳转预览（保证预览读到最新排版）
     await persistProject(project);
     navigate(`/viewer/${project.id}`);
+    // 跳转之后在后台清理换模板/换照片留下的、页面已经不再引用的照片。
+    // 不 await —— 删文件可能要一会儿，不能拖着预览打不开。
+    void cleanupUnusedPhotos(project)
+      .then((cleaned) => {
+        if (cleaned.removedFiles === 0 && cleaned.removedRecords === 0) return;
+        // 确实删了东西才清空撤销历史 —— 被删的照片回不来了，旧快照留着只会撤销出空白图。
+        // 清理完成时用户可能已经切到别的相册，别清错历史
+        if (store.getState().project.current?.id !== project.id) return;
+        dispatch(clearHistory());
+      })
+      .catch(() => {
+        // 清理失败不影响预览（照片还在，撤销历史也保留）
+      });
   };
 
   if (!project) {
     return <div className="w-full h-full flex items-center justify-center text-gray-400">加载中...</div>;
   }
 
-  const currentPage = project.pages[currentPageIndex];
+  // 顶栏跨页导航
+  const spreadPageLabel = spreadGroup.length > 1
+    ? `第 ${spreadGroup[0] + 1}–${spreadGroup[1] + 1} 页`
+    : `第 ${(spreadGroup[0] ?? 0) + 1} 页`;
+  const allAnchors = spreadAnchors(project.pages.length);
+  const anchorPos = allAnchors.indexOf(anchorOf(currentPageIndex, project.pages.length));
+  const goSpread = (delta: number) => {
+    const next = allAnchors[anchorPos + delta];
+    if (next === undefined) return;
+    flushEditingText();
+    dispatch(setCurrentPageAction(next));
+  };
+
+  // ── 左侧缩略图：成对增删 + 成对拖拽 ─────────────────────────────
+  // 插点一律用 spreadLayout 的 helper 算，别手算下标：算错就把跨页劈开了。
+
+  const handleSelectSpread = (anchor: number) => {
+    flushEditingText();
+    dispatch(setCurrentPageAction(anchor));
+  };
+
+  /** 在 atIndex 处插一对空白页并选中它（插入后新组的第一页就是 atIndex） */
+  const handleAddPairAt = (atIndex: number) => {
+    flushEditingText();
+    dispatch(pushHistory());
+    dispatch(addPagePair({ atIndex }));
+    dispatch(setCurrentPageAction(atIndex));
+  };
+
+  const handleDeletePair = (anchor: number) => {
+    const group = spreadGroupAt(anchor, project.pages.length);
+    if (group.length !== 2) return;
+    if (!confirm('这两页会一起删除，确定吗？')) return;
+
+    // 正在编辑/裁剪的内容如果就在被删的两页上，直接关掉 —— 别先保存进即将删掉的页面
+    const edited = editingTextStateRef.current;
+    if (edited && group.includes(edited.pageIndex)) {
+      editingTextStateRef.current = null;
+      setEditingText(null);
+    } else {
+      flushEditingText();
+    }
+    if (cropping && group.includes(cropping.pageIndex)) {
+      setCropping(null);
+    }
+
+    const totalAfter = project.pages.length - 2;
+    const currentAnchor = anchorOf(currentPageIndex, project.pages.length);
+    // 删的是当前跨页 → 落回后一组；删在它前面 → 整体前移两页；删在它后面 → 不动
+    const nextAnchor = anchor === currentAnchor
+      ? anchorAfterDelete(anchor, totalAfter)
+      : anchor < currentAnchor
+        ? currentAnchor - 2
+        : currentAnchor;
+
+    dispatch(pushHistory());
+    dispatch(deletePagePair(anchor));
+    dispatch(setCurrentPageAction(nextAnchor));
+  };
+
+  /** 拖拽成对排序：把拖起的那一对放到目标组前面 */
+  const handleDropPair = (targetAnchor: number) => {
+    if (dragAnchor === null) {
+      setDragOverAnchor(null);
+      return;
+    }
+    const { from, to } = movePairBefore(dragAnchor, targetAnchor, project.pages.length);
+    if (from !== to) {
+      flushEditingText();
+      dispatch(pushHistory());
+      dispatch(movePages({ from, to, count: 2 }));
+      // 挪完这一对就在 [to, to+1]，选中它
+      dispatch(setCurrentPageAction(to));
+    }
+    setDragAnchor(null);
+    setDragOverAnchor(null);
+  };
 
   // 文件夹异常提示条（§9.4）：中途断连时编辑继续，改动始终先落浏览器，重连后自动补写
   const folderNotice =
@@ -525,7 +710,25 @@ export default function Editor() {
             }}
             className="text-base font-medium bg-transparent border-b border-transparent hover:border-gray-300 focus:border-amber-600 outline-none px-1 py-0.5 w-48"
           />
-          <span className="text-xs text-gray-400">{project.pages.length} 页 · A5</span>
+          <div className="flex items-center gap-1 text-xs text-gray-400">
+            <button
+              onClick={() => goSpread(-1)}
+              disabled={anchorPos <= 0}
+              title="上一个跨页"
+              className="w-6 h-6 rounded hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              ‹
+            </button>
+            <span>{spreadPageLabel} · 共 {project.pages.length} 页 · A5</span>
+            <button
+              onClick={() => goSpread(1)}
+              disabled={anchorPos < 0 || anchorPos >= allAnchors.length - 1}
+              title="下一个跨页"
+              className="w-6 h-6 rounded hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              ›
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -582,7 +785,7 @@ export default function Editor() {
           <button onClick={() => dispatch(setZoom(zoom / 1.2))} className="w-8 h-8 text-gray-600 hover:bg-gray-100 rounded">-</button>
           <span className="text-xs text-gray-500 w-12 text-center">{Math.round(zoom * 100)}%</span>
           <button onClick={() => dispatch(setZoom(zoom * 1.2))} className="w-8 h-8 text-gray-600 hover:bg-gray-100 rounded">+</button>
-          <button onClick={() => dispatch(resetZoom())} className="px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded">适应</button>
+          <button onClick={fitToView} className="px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded">适应</button>
           <div className="w-px h-6 bg-gray-200 mx-1" />
           <button onClick={handleSave} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">
             {saving ? '保存中...' : '💾 保存'}
@@ -619,7 +822,7 @@ export default function Editor() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧面板 */}
-        <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+        <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
           <div className="flex border-b border-gray-100">
             {(['pages', 'templates'] as const).map((tab) => (
               <button
@@ -633,7 +836,7 @@ export default function Editor() {
                 {/* 模板页签悬停提示气泡 */}
                 {tab === 'templates' && (
                   <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-52 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 pointer-events-none shadow-xl leading-relaxed text-left">
-                    切换模板时，当前页已编辑好的文案会被覆盖，请先保存文案，再切换模板
+                    切换模板时，当前页已编辑好的文案会被覆盖，模板放不下的照片也会被删除，请先保存文案，再切换模板
                     {/* 气泡小箭头 */}
                     <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-800 rotate-45"></div>
                   </div>
@@ -645,86 +848,59 @@ export default function Editor() {
           {/* 每个页签自己是独立的滚动容器，切换时保留各自的滚动位置 */}
           <div className={leftTab === 'pages' ? 'flex-1 overflow-auto p-3' : 'hidden'}>
             <div className="space-y-2">
-              {project.pages.map((page, idx) => (
-                <PageThumbnail
-                  key={page.id}
-                  page={page}
-                  index={idx}
-                  active={idx === currentPageIndex}
-                  format={project.format}
-                  onClick={() => dispatch(setCurrentPageAction(idx))}
-                  onDelete={() => {
-                    if (project.pages.length <= 1) return;
-                    dispatch(pushHistory());
-                    dispatch(deletePage(idx));
-                    // 删除页面后，自动切换到正确的当前页，避免索引越界导致白屏
-                    const total = project.pages.length;
-                    let newIndex = currentPageIndex;
-                    if (idx === currentPageIndex) {
-                      // 删除的是当前页：如果是最后一页就跳到上一页，否则保持索引（自动指向下一页）
-                      newIndex = idx === total - 1 ? idx - 1 : idx;
-                    } else if (idx < currentPageIndex) {
-                      // 删除的是当前页之前的页，当前索引减1
-                      newIndex = currentPageIndex - 1;
-                    }
-                    // 确保索引在有效范围内
-                    newIndex = Math.max(0, Math.min(newIndex, total - 2));
-                    setTimeout(() => dispatch(setCurrentPageAction(newIndex)), 0);
-                  }}
-                  onAddPageBefore={() => {
-                    dispatch(pushHistory());
-                    dispatch(addPage({ afterIndex: idx - 1 }));
-                    // 新页面插入在 idx 位置，自动选中它
-                    dispatch(setCurrentPageAction(idx));
-                  }}
-                  onAddPageAfter={() => {
-                    dispatch(pushHistory());
-                    dispatch(addPage({ afterIndex: idx }));
-                    // 新页面插入在 idx + 1 位置，自动选中它
-                    dispatch(setCurrentPageAction(idx + 1));
-                  }}
-                  draggable
-                  isDragOver={dragOverIndex === idx && dragIndex !== idx}
-                  onDragStart={(e) => {
-                    setDragIndex(idx);
-                    e.dataTransfer.effectAllowed = 'move';
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOverIndex(idx);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (dragIndex !== null && dragIndex !== idx) {
-                      dispatch(reorderPages({ from: dragIndex, to: idx }));
-                    }
-                    setDragIndex(null);
-                    setDragOverIndex(null);
-                  }}
-                />
-              ))}
+              {spreadGroups(project.pages.length).map((group) => {
+                const anchor = group[0];
+                const paired = group.length === 2;
+                // 结尾落单页（总页数为偶数时）：新的一对只能插在它上方，
+                // 「下方新建」会插到它前面去，按钮文案会对不上，索性不给
+                const isEndingLone = !paired && anchor > 0;
+                return (
+                  <SpreadThumbnail
+                    key={project.pages[anchor].id}
+                    pages={group.map((i) => project.pages[i])}
+                    startIndex={anchor}
+                    format={project.format}
+                    active={group.includes(currentPageIndex)}
+                    onClick={() => handleSelectSpread(anchor)}
+                    onDelete={paired ? () => handleDeletePair(anchor) : undefined}
+                    // 封面永远是第一页，「上方新建」无处可插
+                    onAddPairBefore={anchor > 0 ? () => handleAddPairAt(anchor) : undefined}
+                    onAddPairAfter={isEndingLone ? undefined : () => handleAddPairAt(insertAfterSpread(anchor, project.pages.length))}
+                    draggable={paired}
+                    isDragOver={dragOverAnchor === anchor && dragAnchor !== anchor}
+                    onDragStart={(e) => {
+                      setDragAnchor(anchor);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOverAnchor(anchor);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      handleDropPair(anchor);
+                    }}
+                  />
+                );
+              })}
               <button
-                onClick={() => {
-                  dispatch(pushHistory());
-                  dispatch(addPage({}));
-                  // 新页面插入在最后，自动选中它
-                  dispatch(setCurrentPageAction(project.pages.length));
-                }}
+                onClick={() => handleAddPairAt(appendPairIndex(project.pages.length))}
                 className="w-full py-3 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 hover:border-amber-400 hover:text-amber-600 transition-colors text-sm"
               >
                 + 添加页面
               </button>
             </div>
           </div>
-          <div className={leftTab === 'templates' ? 'flex-1 overflow-auto p-3' : 'hidden'}>
+          <div className={leftTab === 'templates' ? 'flex-1 overflow-hidden' : 'hidden'}>
             <TemplatePanel format={project.format} onApplied={() => setLeftTab('pages')} />
           </div>
         </aside>
 
         {/* 中间画布区域 */}
         <main ref={containerRef} className="flex-1 overflow-hidden relative flex items-center justify-center">
-          <div style={canvasStyle} className="shadow-2xl relative">
-            <canvas ref={canvasRef} className="block bg-white" />
+          {/* 投影由渲染器按页画，桌面底色从 canvas 透明处透出来 */}
+          <div style={canvasStyle} className="relative">
+            <canvas ref={canvasRef} className="block" />
             {/* 文字编辑输入框 */}
             {editingText && (
               <textarea
@@ -732,10 +908,10 @@ export default function Editor() {
                 value={editingText.content}
                 onChange={(e) => setEditingText({ ...editingText, content: e.target.value })}
                 onBlur={() => {
-                  // 失焦时保存
+                  // 失焦时保存（写到文字所在的那一页）
                   dispatch(pushHistory());
                   dispatch(updateElement({
-                    pageIndex: currentPageIndex,
+                    pageIndex: editingText.pageIndex,
                     elementId: editingText.elementId,
                     updates: { content: editingText.content }
                   }));
@@ -752,7 +928,12 @@ export default function Editor() {
                 autoFocus
                 style={{
                   position: 'absolute',
-                  left: mmToPx(editingText.x, 96),
+                  // 文字在左页/右页/落单居中页，位置要加上那一页的画布偏移
+                  left: mmToPx(
+                    (spreadPages.find((sp) => sp.index === editingText.pageIndex)?.offsetX ?? 0) +
+                      editingText.x,
+                    96
+                  ),
                   top: mmToPx(editingText.y, 96),
                   width: mmToPx(editingText.width, 96),
                   minHeight: mmToPx(editingText.height, 96),
@@ -777,8 +958,8 @@ export default function Editor() {
         {/* 右侧属性面板 */}
         <aside className="w-72 bg-white border-l border-gray-200 overflow-auto">
           <PropertyPanel
-            page={currentPage}
-            pageIndex={currentPageIndex}
+            pages={project.pages}
+            activePageIndex={safeActivePageIndex}
             selectedIds={selectedIds}
             projectId={project.id}
           />
@@ -799,7 +980,7 @@ export default function Editor() {
 
       {/* 图片裁剪对话框（URL 有了才开，也就是"确实有照片"才开） */}
       {cropping?.url && (() => {
-        const el = currentPage?.elements.find(e => e.id === cropping.id);
+        const el = project.pages[cropping.pageIndex]?.elements.find(e => e.id === cropping.id);
         if (!el || el.type !== 'image') return null;
         return (
           <ImageCropper
@@ -808,7 +989,7 @@ export default function Editor() {
             onConfirm={(crop) => {
               dispatch(pushHistory());
               dispatch(updateElement({
-                pageIndex: currentPageIndex,
+                pageIndex: cropping.pageIndex,
                 elementId: cropping.id,
                 updates: { crop }
               }));

@@ -19,16 +19,37 @@ import ImageCropper from './ImageCropper';
 import type { Page, Element, ImageElement, TextElement, ShapeElement } from '@/types';
 
 interface Props {
-  page: Page;
-  pageIndex: number;
+  /** 整本相册的所有页：选中的元素可能落在跨页的任意一页上 */
+  pages: Page[];
+  /** 活动页（点中的那一页）：无选中时的页面属性、选区都作用在它上面 */
+  activePageIndex: number;
   selectedIds: string[];
   /** 替换照片时要写进哪本相册的文件夹（资产仓库用） */
   projectId: string;
 }
 
-export default function PropertyPanel({ page, pageIndex, selectedIds, projectId }: Props) {
+/** 在整本里找元素，返回它所在的页 */
+function findElementInPages(pages: Page[], elementId: string): { el: Element; pageIndex: number } | null {
+  for (let i = 0; i < pages.length; i++) {
+    const el = pages[i].elements.find((e) => e.id === elementId);
+    if (el) return { el, pageIndex: i };
+  }
+  return null;
+}
+
+/** 把元素起点夹在页内，不能通过属性面板把元素推过中缝 */
+function clampPosition(value: number, size: number, limit: number): number {
+  const maxStart = Math.max(0, limit - size);
+  return Math.max(0, Math.min(maxStart, value));
+}
+
+export default function PropertyPanel({ pages, activePageIndex, selectedIds, projectId }: Props) {
   const dispatch = useAppDispatch();
+  const format = useAppSelector((s) => s.project.current?.format);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+
+  const page = pages[activePageIndex];
+  const pageIndex = activePageIndex;
 
   // 页面不存在时（比如刚删除了当前页），不渲染属性面板，避免白屏
   if (!page || !page.elements) {
@@ -36,23 +57,35 @@ export default function PropertyPanel({ page, pageIndex, selectedIds, projectId 
   }
 
   const selectedElement = selectedIds.length === 1
-    ? page.elements.find((el) => el.id === selectedIds[0])
+    ? findElementInPages(pages, selectedIds[0])
     : null;
 
   const isMultiSelect = selectedIds.length > 1;
 
   function updateEl(updates: Partial<Element>) {
     if (!selectedElement) return;
-    dispatch(updateElement({ pageIndex, elementId: selectedElement.id, updates }));
+    const next = { ...updates };
+    if (format) {
+      // X/Y 输入框按元素所在页夹紧（拖拽本身已经在交互层夹过了）
+      if (next.x !== undefined) next.x = clampPosition(next.x, selectedElement.el.width, format.width);
+      if (next.y !== undefined) next.y = clampPosition(next.y, selectedElement.el.height, format.height);
+    }
+    dispatch(updateElement({ pageIndex: selectedElement.pageIndex, elementId: selectedElement.el.id, updates: next }));
   }
 
-  // 多选时批量移动所有选中元素
+  // 多选时批量移动所有选中元素：每个元素按自己所在的页夹紧，照片不能跨中缝
   function moveSelectedElements(deltaX: number, deltaY: number) {
     for (const id of selectedIds) {
-      const el = page.elements.find((e) => e.id === id);
-      if (el) {
-        dispatch(updateElement({ pageIndex, elementId: id, updates: { x: el.x + deltaX, y: el.y + deltaY } }));
+      const found = findElementInPages(pages, id);
+      if (!found) continue;
+      const updates: Partial<Element> = {};
+      if (deltaX !== 0) {
+        updates.x = format ? clampPosition(found.el.x + deltaX, found.el.width, format.width) : found.el.x + deltaX;
       }
+      if (deltaY !== 0) {
+        updates.y = format ? clampPosition(found.el.y + deltaY, found.el.height, format.height) : found.el.y + deltaY;
+      }
+      dispatch(updateElement({ pageIndex: found.pageIndex, elementId: id, updates }));
     }
   }
 
@@ -93,30 +126,35 @@ export default function PropertyPanel({ page, pageIndex, selectedIds, projectId 
       {/* 多选组属性（选中多个元素时） */}
       {isMultiSelect && (
         <MultiSelectPanel
-          page={page}
+          pages={pages}
           selectedIds={selectedIds}
           onMove={moveSelectedElements}
         />
       )}
 
       {/* 图片元素属性 */}
-      {selectedElement?.type === 'image' && (
+      {selectedElement?.el.type === 'image' && (
         <ImagePropertyPanel
-          el={selectedElement as ImageElement}
-          pageIndex={pageIndex}
+          el={selectedElement.el as ImageElement}
+          pageIndex={selectedElement.pageIndex}
           onUpdate={updateEl}
           projectId={projectId}
         />
       )}
 
       {/* 文字元素属性 */}
-      {selectedElement?.type === 'text' && (
-        <TextProperties el={selectedElement as TextElement} onUpdate={updateEl} />
+      {selectedElement?.el.type === 'text' && (
+        <TextProperties el={selectedElement.el as TextElement} onUpdate={updateEl} />
       )}
 
       {/* 形状/选区元素属性 */}
-      {selectedElement?.type === 'shape' && (
-        <ShapeProperties el={selectedElement as ShapeElement} onUpdate={updateEl} />
+      {selectedElement?.el.type === 'shape' && (
+        <ShapeProperties
+          el={selectedElement.el as ShapeElement}
+          page={pages[selectedElement.pageIndex]}
+          pageIndex={selectedElement.pageIndex}
+          onUpdate={updateEl}
+        />
       )}
     </div>
   );
@@ -480,21 +518,28 @@ function PositionFields({ el, onChange }: { el: Element; onChange: (u: Partial<E
 
 // ==================== 多选组属性面板 ====================
 
-function MultiSelectPanel({ page, selectedIds, onMove }: {
-  page: Page;
+function MultiSelectPanel({ pages, selectedIds, onMove }: {
+  pages: Page[];
   selectedIds: string[];
   onMove: (deltaX: number, deltaY: number) => void;
 }) {
-  // 计算选中组的边界
-  const selectedElements = selectedIds
-    .map((id) => page.elements.find((el) => el.id === id))
-    .filter((el): el is Element => !!el);
+  // 计算选中组的边界。跨页多选时只取第一个元素所在页的那些元素：
+  // 两页的坐标各自从 0 起算，混在一起算最小值没有意义。
+  const found = selectedIds
+    .map((id) => findElementInPages(pages, id))
+    .filter((f): f is { el: Element; pageIndex: number } => !!f);
+
+  const anchorPageIndex = found[0]?.pageIndex;
+  const selectedElements = found
+    .filter((f) => f.pageIndex === anchorPageIndex)
+    .map((f) => f.el);
 
   let minX = Infinity, minY = Infinity;
   for (const el of selectedElements) {
     minX = Math.min(minX, el.x);
     minY = Math.min(minY, el.y);
   }
+  if (!Number.isFinite(minX)) { minX = 0; minY = 0; }
 
   const handleXChange = (newX: number) => {
     onMove(newX - minX, 0);
@@ -536,11 +581,13 @@ function MultiSelectPanel({ page, selectedIds, onMove }: {
 
 // ==================== 形状/选区属性面板 ====================
 
-function ShapeProperties({ el, onUpdate }: { el: ShapeElement; onUpdate: (u: Partial<Element>) => void }) {
+function ShapeProperties({ el, page, pageIndex, onUpdate }: {
+  el: ShapeElement;
+  page: Page;
+  pageIndex: number;
+  onUpdate: (u: Partial<Element>) => void;
+}) {
   const dispatch = useAppDispatch();
-  const project = useAppSelector((s) => s.project.current);
-  const currentPageIndex = useAppSelector((s) => s.editor.currentPageIndex);
-  const page = project?.pages[currentPageIndex];
 
   // 统一的层级调整：重新排序后交换位置，再重新分配所有元素的zIndex（确保唯一稳定）
   const adjustLayer = (direction: 'forward' | 'backward') => {
@@ -570,7 +617,7 @@ function ShapeProperties({ el, onUpdate }: { el: ShapeElement; onUpdate: (u: Par
     dispatch(pushHistory());
     sorted.forEach((element, index) => {
       if (element.zIndex !== index) {
-        dispatch(updateElement({ pageIndex: currentPageIndex, elementId: element.id, updates: { zIndex: index } }));
+        dispatch(updateElement({ pageIndex, elementId: element.id, updates: { zIndex: index } }));
       }
     });
   };
@@ -578,9 +625,9 @@ function ShapeProperties({ el, onUpdate }: { el: ShapeElement; onUpdate: (u: Par
   const handleBringForward = () => adjustLayer('forward');
   const handleSendBackward = () => adjustLayer('backward');
 
-  // 直接更新当前元素（使用 el.id，确保只更新当前选中的元素）
+  // 直接更新当前元素（走 onUpdate —— 里面的 X/Y 夹紧不能绕过去）
   const handleUpdate = (updates: Partial<Element>) => {
-    dispatch(updateElement({ pageIndex: currentPageIndex, elementId: el.id, updates }));
+    onUpdate(updates);
   };
 
   return (
