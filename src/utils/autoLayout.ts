@@ -14,7 +14,7 @@ import { spreadGroups } from '@/utils/spread';
  * - 单图页有四个模板参与轮换（满版、上图下文、上文下图、左图右文）；
  *   满版图没有文案填充，必须和 ≥4 张照片的页面配对，避免整个跨页太空
  * - 6 图模板加入轮换
- * - 比较满的排版（三图错落、四图网格、四图杂志风、五图拼贴、双图横板）
+ * - 比较满的排版（四图网格、四图杂志风、五图拼贴、双图横板）
  *   暂时不参与智能排版，只在模板面板里供手动选用（名单见 AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS）
  * - 九宫格在照片超过 45 张时启用，固定放正文最后那一对，和一张满版图配对
  * - 照片按横竖比例分配图位，画面分量高的照片进大图位
@@ -81,7 +81,6 @@ const SIX_GRID_MIN_PHOTOS = 12;
  */
 const AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS = new Set<string>([
   'two-images-stack',    // 双图横板
-  'three-collage-v2',    // 三图错落
   'four-grid',           // 四图网格
   'four-magazine',       // 四图杂志风（本来就不参与）
   'five-collage',        // 五图拼贴
