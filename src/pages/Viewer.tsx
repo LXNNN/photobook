@@ -15,6 +15,7 @@ import {
 import { downloadBlob } from '@/utils/backup';
 import { mmToPx } from '@/utils/units';
 import { drawPageContent, collectAssetIds } from '@/engine/drawPageContent';
+import { ensureFontsLoaded } from '@/utils/fonts';
 import { jsPDF } from 'jspdf';
 import type { Project } from '@/types';
 import type { PageFlip } from 'page-flip';
@@ -121,7 +122,11 @@ export default function Viewer() {
     setLoading(true);
     const dpi = 150;
 
-    const assets = await decodeAssets(collectAssetIds(p.pages));
+    // 图片和艺术字体并行准备好：字体晚到的话，预览图里会用系统字体顶替
+    const [assets] = await Promise.all([
+      decodeAssets(collectAssetIds(p.pages)),
+      ensureFontsLoaded(p.pages),
+    ]);
 
     const images: string[] = [];
     for (const page of p.pages) {
@@ -457,7 +462,11 @@ export default function Viewer() {
 
       // 整本书用到的图一次解码好，逐页复用。
       // 原来是每页都把本页的图重新读库、重新解码一遍，同一张照片横跨几页就解几遍。
-      const assets = await decodeAssets(collectAssetIds(pages));
+      // 字体也要在开画之前就绪，否则 300dpi 的 PDF 里会被拍成系统字体。
+      const [assets] = await Promise.all([
+        decodeAssets(collectAssetIds(pages)),
+        ensureFontsLoaded(pages),
+      ]);
 
       // 渲染每一页并添加到 PDF
       for (let i = 0; i < pages.length; i++) {

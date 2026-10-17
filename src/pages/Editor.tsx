@@ -28,6 +28,7 @@ import {
   SHOW_BODY_STYLE_ENTRY,
 } from '@/utils/bodyText';
 import { cleanupUnusedPhotos } from '@/utils/photoCleanup';
+import { ensureFontsLoaded, fontsReady } from '@/utils/fonts';
 
 // 启动守卫在 StrictMode 下会跑两遍，提示只弹一次
 let folderGuardAlerted = false;
@@ -203,14 +204,18 @@ export default function Editor() {
     const ch = container.clientHeight;
     if (cw <= 0 || ch <= 0) return;
     const padding = 48;
+    // canvas.width 是超采样后的位图宽（EDITOR_RENDER_SCALE 倍），
+    // 缩放要按 CSS 逻辑尺寸算，否则 zoom 会只有正确值的一半
+    const canvasW = parseFloat(canvas.style.width) || canvas.width;
+    const canvasH = parseFloat(canvas.style.height) || canvas.height;
     const nextZoom = Math.max(
       0.1,
-      Math.min(1, (cw - padding) / canvas.width, (ch - padding) / canvas.height)
+      Math.min(1, (cw - padding) / canvasW, (ch - padding) / canvasH)
     );
     dispatch(setZoom(nextZoom));
     dispatch(setPan({
-      x: (canvas.width * (1 - nextZoom)) / 2,
-      y: (canvas.height * (1 - nextZoom)) / 2,
+      x: (canvasW * (1 - nextZoom)) / 2,
+      y: (canvasH * (1 - nextZoom)) / 2,
     }));
   }, [dispatch]);
 
@@ -274,7 +279,10 @@ export default function Editor() {
       // 以鼠标位置为中心缩放：调整 pan 让鼠标指向的画布位置不变
       if (center && canvasRef.current) {
         const rect = canvasRef.current.getBoundingClientRect();
-        const oldZoom = rect.width / canvasRef.current.width;
+        // rect.width 已含 CSS zoom；canvas.width 是超采样位图宽，不能直接除，
+        // 要按 CSS 逻辑尺寸算，否则以鼠标为中心缩放会跳（ratio 差 renderScale 倍）
+        const logicalW = parseFloat(canvasRef.current.style.width) || canvasRef.current.width;
+        const oldZoom = rect.width / logicalW;
         const ratio = newZoom / oldZoom;
         const currentPan = store.getState().editor.pan;
         const deltaX = (center.x - rect.left) * (1 - ratio);
@@ -300,6 +308,7 @@ export default function Editor() {
   // 渲染当前跨页（1~2 页）
   useEffect(() => {
     if (!rendererRef.current || !project) return;
+    let cancelled = false;
 
     // 加载跨页里所有页面用到的图片资源
     (async () => {
@@ -327,14 +336,29 @@ export default function Editor() {
       }
     })();
 
-    rendererRef.current.render(
-      spreadPages,
-      selectedIds,
-      showGuides,
-      showBleed,
-      hoverTargetId,
-      safeActivePageIndex
-    );
+    const renderNow = () => {
+      if (cancelled) return;
+      rendererRef.current?.render(
+        spreadPages,
+        selectedIds,
+        showGuides,
+        showBleed,
+        hoverTargetId,
+        safeActivePageIndex
+      );
+    };
+    renderNow();
+
+    // 艺术字体第一次用到时才下载。字体没就绪时上面这一版画的是系统字体，
+    // canvas 不会自己重画，所以等字体可用后再画一遍；已经就绪时不重复画
+    // （拖拽时每帧都会触发这个 effect，每帧多画一次很浪费）。
+    if (!fontsReady(spreadPages.map((p) => p.page))) {
+      void ensureFontsLoaded(spreadPages.map((p) => p.page)).then(renderNow);
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [project, spreadPages, selectedIds, showGuides, showBleed, hoverTargetId, safeActivePageIndex]);
 
   // 更新交互管理器状态

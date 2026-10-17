@@ -4,6 +4,7 @@ import { mmToPx } from '@/utils/units';
 import { getImageAsset } from '@/utils/assetStore';
 import { getImageURL } from '@/utils/image';
 import { drawPageContent } from '@/engine/drawPageContent';
+import { ensureFontsLoaded } from '@/utils/fonts';
 
 /** 和主画布同一个 dpi。缩略图不另算字号，靠整体缩放，所以这个值只用来推画布高度 */
 const DPI = 96;
@@ -79,6 +80,10 @@ export default function PageCanvas({ page, format, width, frozen = false }: Prop
             assets.set(assetId, img);
           })
       );
+
+      // 艺术字体没就绪就落笔的话，canvas 会拿系统字体顶替，而且不会自动重画。
+      // document.fonts.load 对系统字体立即 resolve，不会拖慢普通页面。
+      await ensureFontsLoaded([shown]);
 
       // 已经有更新的一轮绘制接管了，这一轮的画面作废
       if (drawIdRef.current !== myId) return;

@@ -5,7 +5,8 @@ import { selectElement } from '@/store/editorSlice';
 import { getImageAsset, saveImageAsset } from '@/utils/assetStore';
 import { persistTemplate } from '@/utils/templateLibrary';
 import { fileToImageAsset, getImageURL } from '@/utils/image';
-import { FONT_OPTIONS, FONT_WEIGHTS } from '@/utils/fonts';
+import { ART_FONT_OPTIONS, SYSTEM_FONT_OPTIONS, FONT_OPTIONS, FONT_WEIGHTS } from '@/utils/fonts';
+import type { FontOption } from '@/utils/fonts';
 import { generateId } from '@/utils/units';
 import {
   TEMPLATES,
@@ -376,6 +377,15 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
 
 // ==================== 文字属性 ====================
 
+/** 字体下拉的选项。style 里的字体只是在支持自定义样式的浏览器里预览用 */
+function renderFontOptions(options: FontOption[]) {
+  return options.map((f) => (
+    <option key={f.label} value={f.value} style={{ fontFamily: f.value }}>
+      {f.label}
+    </option>
+  ));
+}
+
 function TextProperties({ el, onUpdate }: { el: TextElement; onUpdate: (u: Partial<Element>) => void }) {
   const currentWeight = el.fontWeight ?? 'normal';
 
@@ -404,11 +414,8 @@ function TextProperties({ el, onUpdate }: { el: TextElement; onUpdate: (u: Parti
                 当前字体（{el.fontFamily}）
               </option>
             )}
-            {FONT_OPTIONS.map((f) => (
-              <option key={f.label} value={f.value} style={{ fontFamily: f.value }}>
-                {f.label}
-              </option>
-            ))}
+            <optgroup label="艺术字体">{renderFontOptions(ART_FONT_OPTIONS)}</optgroup>
+            <optgroup label="系统字体">{renderFontOptions(SYSTEM_FONT_OPTIONS)}</optgroup>
           </select>
         </div>
         <div>

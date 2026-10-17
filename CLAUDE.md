@@ -41,13 +41,15 @@ npm run preview   # 预览构建产物
 
 `src/engine/drawPageContent.ts` 的 `drawPageContent(ctx, page, format, dpi, assets)` 是全站唯一的页面绘制规则，以下所有地方都调它，**任何改动都不能另写一套**：
 
-- 编辑器主画布（`CanvasRenderer`，96dpi）
+- 编辑器主画布（`CanvasRenderer`，96dpi 逻辑坐标 + `EDITOR_RENDER_SCALE` 倍位图超采样）
 - 左侧页缩略图（`PageCanvas`，每页一个独立 canvas；先 `ctx.setTransform(scale,...)` 整体缩放，dpi 仍传 96，坐标/字号/折行点与主画布逐字一致。一个 canvas 里 translate 画两页不行——右页逻辑宽会算成负数，背景画不出来）
 - 首页书架封面（48dpi）
 - 预览页整页渲染（150dpi）
 - PDF 导出（300dpi）
 
 同文件的 `collectAssetIds(pages)` 收集全部图片/贴纸 id——绘制依赖它收得全不全，新增元素类型时两边都要记得。历史上 Viewer 自己抄过一份绘制逻辑，漏了旋转和 cover 裁剪，缩略图/预览全错。
+
+**艺术字体是本地 @font-face**（`src/assets/fonts/`，声明在 `index.css`；OFL 授权文件同目录）：得意黑、龙藏体、Great Vibes、Playfair Display。canvas 不会等字体下载完——**每处 `drawPageContent` 之前都要 `await ensureFontsLoaded(pages)`**（`utils/fonts.ts`），否则系统字体会被画进缩略图/预览图/300dpi PDF，而且画上去不会自动重画。现有入口：Editor 主画布（先画一版、字体就绪后再画一版）、`PageCanvas`、书架封面、Viewer 预览、PDF 导出、图片导出。新增字体：woff2 放进 `src/assets/fonts/` → `index.css` 加 `@font-face` → 加进 `utils/fonts.ts` 的 `ART_FONT_OPTIONS`；字体只在使用时才下载，不用的字体不拖慢首屏。字体预览页在 `docs/字体预览/`（本地，不上传）。
 
 ### 状态管理（Redux）
 
@@ -84,7 +86,7 @@ npm run preview   # 预览构建产物
 - `InteractionManager` 处理：命中检测（含旋转包围盒）、8 个缩放手柄 + 旋转手柄、拖拽 + 对齐辅助线吸附、拖到另一张图片上高亮并换位（`swapImages`）、双击文字 → 覆盖 textarea 编辑、双击图片 → 裁剪弹窗
 - 屏幕→画布坐标换算用 `getBoundingClientRect()` 比例，已包含外层 CSS transform（zoom/pan），**不要再手动减 pan 除 zoom**
 - 空图片区域（模板里没填照片的 imageId 为空的元素）：加载资源时**必须跳过**，`getImageAsset(undefined)` 会抛 DataError 中断整个循环，排它后面的照片永远画不出来
-- 编辑器画布固定 96dpi，放大看必糊——这是已知的、用户接受的设计，别顺手"修"（和上传压缩是两回事）
+- **编辑器主画布是 2× 超采样**（`CanvasRenderer.ts` 的 `EDITOR_RENDER_SCALE = 2`）：坐标/字号/命中判定仍全部按 96dpi 逻辑像素，但位图宽高 ×2，`draw()` 开头 `ctx.setTransform(2,…)` 统一放大，`canvas.style.width/height` 固定为逻辑尺寸——显示大小不变、文字边缘清晰（之前 1:1 位图 + 屏幕缩放导致发虚）。改这里必须同步三处：`InteractionManager.screenToCanvas` 的 `/ renderScale`、`Editor.fitToView` 用 `canvas.style.width` 而不是 `canvas.width` 算 zoom/pan、任何新读 `canvas.width/height` 的地方。**左侧页面缩略图仍是 1×**（她说过先不改）；这和上传压缩是两回事，别混
 - **进编辑页一律重置**：Editor 挂载/切 projectId 时 `dispatch(resetEditor())`——页码回第 1 页、zoom/pan/选中全复位（辅助线开关也回默认）。用户明确要求「不要有缓存」，别加「恢复上次编辑位置」这类功能
 - **双页编辑（spread editing）**：数据模型零改动，`pages` 还是平的 A5 单页数组，预览/导出/智能排版不受影响。`spreadGroups(total)` 是唯一分组实现（`utils/spread.ts`）：`[0]`、`[1,2]`、`[3,4]`…，总页数偶数时末页落单。`currentPageIndex` 存**跨页锚页**（组第一页），`activePageIndex` 存**活动页**（新照片/文字/模板落到哪页）；点元素只改 active、不改 current（否则 `setCurrentPage` 清选中会打断跨页 Ctrl 多选）
 - 双页画布永远是两页宽，落单页居中（offset = 页宽/2）。**每页必须 `ctx.clip()` 后再 `translate + drawPageContent`**——drawPageContent 用 ctx 变换反推逻辑画布尺寸，translate 后背景会溢出到隔壁页/桌面

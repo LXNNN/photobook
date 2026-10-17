@@ -1,6 +1,7 @@
 import type { Element, BookFormat } from '@/types';
 import type { SpreadPage } from '@/utils/spreadLayout';
 import type { BoundaryDistance } from './CanvasRenderer';
+import { EDITOR_RENDER_SCALE } from './CanvasRenderer';
 import { pxToMm } from '@/utils/units';
 
 export type InteractionMode = 'none' | 'drag' | 'resize' | 'rotate' | 'pan';
@@ -34,6 +35,8 @@ export class InteractionManager {
   private canvas: HTMLCanvasElement;
   private format: BookFormat;
   private dpi: number;
+  /** 画布位图相对逻辑尺寸的放大倍数，必须和 CanvasRenderer 用同一个值 */
+  private renderScale: number;
   private zoom: number = 1;
   private pan: { x: number; y: number } = { x: 0, y: 0 };
 
@@ -77,10 +80,16 @@ export class InteractionManager {
   // 对齐容差（mm）
   private alignTolerance = 2;
 
-  constructor(canvas: HTMLCanvasElement, format: BookFormat, dpi = 96) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    format: BookFormat,
+    dpi = 96,
+    renderScale = EDITOR_RENDER_SCALE
+  ) {
     this.canvas = canvas;
     this.format = format;
     this.dpi = dpi;
+    this.renderScale = renderScale;
     this.bindEvents();
   }
 
@@ -91,9 +100,10 @@ export class InteractionManager {
   private screenToCanvas(screenX: number, screenY: number): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     // getBoundingClientRect 已包含外层 CSS transform(translate+scale)，
-    // 直接用比例换算到 canvas 内部像素坐标，不要再手动减 pan / 除 zoom
-    const scaleX = this.canvas.width / rect.width;
-    const scaleY = this.canvas.height / rect.height;
+    // 直接用比例换算到 canvas 内部像素坐标，不要再手动减 pan / 除 zoom。
+    // canvas.width 是放大后的位图宽，先除以 renderScale 换回 96dpi 逻辑像素。
+    const scaleX = this.canvas.width / rect.width / this.renderScale;
+    const scaleY = this.canvas.height / rect.height / this.renderScale;
     const cssX = (screenX - rect.left) * scaleX;
     const cssY = (screenY - rect.top) * scaleY;
     return { x: pxToMm(cssX, this.dpi), y: pxToMm(cssY, this.dpi) };

@@ -2,6 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 艺术字体（授权见 src/assets/fonts/OFL-*.txt）。
+   字体只在使用到时才下载，不用的字体不会拖慢首屏。 */
+@font-face {
+  font-family: 'Smiley Sans';
+  src: url('./assets/fonts/smiley-sans.woff2') format('woff2');
+  /* 只有一档字重：声明整个范围，右侧选「加粗」时由浏览器合成伪粗体，
+     而不是找不到匹配字重又退回系统字体 */
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Long Cang';
+  src: url('./assets/fonts/long-cang.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Great Vibes';
+  src: url('./assets/fonts/great-vibes.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Playfair Display';
+  src: url('./assets/fonts/playfair-display.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 * {
   margin: 0;
   padding: 0;

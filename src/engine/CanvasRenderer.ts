@@ -20,6 +20,18 @@ export interface BoundaryDistance {
 }
 
 /**
+ * 编辑器画布位图相对逻辑尺寸（96dpi）的放大倍数。
+ *
+ * 画布的逻辑坐标、字号、命中判定全部还是 96dpi 那一套，只是位图按 2 倍像素画，
+ * 再缩回原来的 CSS 尺寸显示：文字边缘、选中框、投影都会清晰很多。
+ * 预览页之所以清楚，是因为 150dpi 渲染后再缩小显示（超采样）；编辑器原来是
+ * 1:1 位图，屏幕缩放（Windows 125%/150%）和 zoom 一叠加就发虚。
+ *
+ * InteractionManager 的坐标换算依赖这个值，改的时候两处必须一起改。
+ */
+export const EDITOR_RENDER_SCALE = 2;
+
+/**
  * Canvas 渲染器（双页画布）
  *
  * 画布永远是两页宽：正文跨页左页在左、右页在右；封面/结尾这种落单页居中
@@ -30,31 +42,51 @@ export interface BoundaryDistance {
  * 每页必须在 clip 之后才 translate + drawPageContent：drawPageContent 会用
  * ctx 变换反推逻辑画布尺寸来铺背景，translate 之后清屏/背景会一直铺到画布
  * 右缘（落单居中页会糊满右半边桌面）。
+ *
+ * 位图放大倍数见 EDITOR_RENDER_SCALE：draw() 里所有坐标仍按 96dpi 的逻辑
+ * 像素画（setTransform 统一放大），CSS 尺寸固定为逻辑尺寸。
  */
 export class CanvasRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private format: BookFormat;
   private dpi: number;
+  private renderScale: number;
   private imageCache: Map<string, HTMLImageElement> = new Map();
   private dirty: boolean = true;
   private rafId: number | null = null;
 
-  constructor(canvas: HTMLCanvasElement, format: BookFormat, dpi = 96) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    format: BookFormat,
+    dpi = 96,
+    renderScale = EDITOR_RENDER_SCALE
+  ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.format = format;
     this.dpi = dpi;
+    this.renderScale = renderScale;
     this.resize();
+  }
+
+  /** 逻辑画布尺寸（96dpi 像素，也是 CSS 显示尺寸） */
+  private get logicalWidth(): number {
+    return Math.round(mmToPx(this.format.width, this.dpi)) * 2;
+  }
+
+  private get logicalHeight(): number {
+    return Math.round(mmToPx(this.format.height, this.dpi));
   }
 
   /** 调整画布尺寸：固定两页宽（落单页画在中缝位置） */
   resize(dpi?: number) {
     if (dpi) this.dpi = dpi;
-    const width = Math.round(mmToPx(this.format.width, this.dpi)) * 2;
-    const height = Math.round(mmToPx(this.format.height, this.dpi));
-    this.canvas.width = width;
-    this.canvas.height = height;
+    // 位图按 renderScale 放大，CSS 尺寸保持逻辑尺寸 —— 显示大小不变、像素更密
+    this.canvas.width = this.logicalWidth * this.renderScale;
+    this.canvas.height = this.logicalHeight * this.renderScale;
+    this.canvas.style.width = `${this.logicalWidth}px`;
+    this.canvas.style.height = `${this.logicalHeight}px`;
     this.markDirty();
   }
 
@@ -122,7 +154,11 @@ export class CanvasRenderer {
 
   private draw() {
     const ctx = this.ctx;
-    const { width, height } = this.canvas;
+    // 之后所有绘制坐标都用 96dpi 的逻辑像素，位图由这一层变换放大；
+    // 线宽/手柄/投影的视觉大小因此和原来完全一致
+    ctx.setTransform(this.renderScale, 0, 0, this.renderScale, 0, 0);
+    const width = this.logicalWidth;
+    const height = this.logicalHeight;
     ctx.clearRect(0, 0, width, height);
 
     if (this.currentPages.length === 0) return;
@@ -196,7 +232,8 @@ export class CanvasRenderer {
   /** 绘制对齐辅助线（画布 mm 坐标，竖线贯穿整块画布） */
   private drawAlignGuides() {
     const ctx = this.ctx;
-    const { width, height } = this.canvas;
+    const width = this.logicalWidth;
+    const height = this.logicalHeight;
 
     ctx.save();
     ctx.strokeStyle = '#ff4081';
@@ -293,7 +330,7 @@ export class CanvasRenderer {
   private drawPageGuides(originX: number) {
     const ctx = this.ctx;
     const width = this.pageWidthPx;
-    const height = this.canvas.height;
+    const height = this.logicalHeight;
     const bleed = mmToPx(this.format.bleed, this.dpi);
     const safe = mmToPx(this.format.safeMargin, this.dpi);
 
@@ -320,7 +357,7 @@ export class CanvasRenderer {
     ctx.save();
     ctx.strokeStyle = 'rgba(180, 83, 9, 0.75)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(originX + 1, 1, this.pageWidthPx - 2, this.canvas.height - 2);
+    ctx.strokeRect(originX + 1, 1, this.pageWidthPx - 2, this.logicalHeight - 2);
     ctx.restore();
   }
 
