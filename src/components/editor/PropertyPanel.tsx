@@ -273,8 +273,7 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
       <h3 className="text-sm font-medium text-gray-700 mb-4">页面属性</h3>
 
       <div className="space-y-4">
-        {/* 临时隐藏：添加选区功能（照片选区/普通选区），以后开放，将 false 改为 true 即可恢复 */}
-        {false && (
+        {/* 添加选区功能（照片选区/普通选区） */}
         <div className="pb-4 border-b border-gray-100">
           <label className="block text-xs text-gray-500 mb-2">添加选区</label>
           <div className="grid grid-cols-2 gap-2">
@@ -292,7 +291,6 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
             </button>
           </div>
         </div>
-        )}
 
         <div>
           <label className="block text-xs text-gray-500 mb-1.5">背景颜色</label>

@@ -21,7 +21,7 @@ export interface TemplateDefinition {
 }
 
 export interface TemplateElement {
-  type: 'image' | 'text';
+  type: 'image' | 'text' | 'shape';
   /** 相对位置和尺寸 (0-1) */
   x: number;
   y: number;
@@ -303,6 +303,8 @@ export const TEMPLATES: TemplateDefinition[] = [
     description: '三张竖版照片从左下到右上阶梯错落排列，左上角配标题和短句文案',
     thumbnail: 'three-stairs',
     elements: [
+      // 底部普通选区（米白色背景块，最底层）
+      { type: 'shape', x: 0, y: 0.6995, width: 0.998, height: 0.3, backgroundColor: '#faf8f5' },
       // 标题
       { type: 'text', x: 0.093, y: 0.139, width: 0.5, height: 0.06, placeholder: '时光印记', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
       // 文案（两行短句）
@@ -666,6 +668,16 @@ export function applyTemplate(
         imageId,
         // 拷贝一份，避免多个页面共用同一个 crop 对象
         crop: tplEl.crop ? { ...tplEl.crop } : { x: 0, y: 0, width: 1, height: 1 },
+      });
+    } else if (tplEl.type === 'shape') {
+      // 普通选区（形状元素）
+      elements.push({
+        ...base,
+        type: 'shape',
+        backgroundColor: (tplEl as any).backgroundColor || '#ffffff',
+        borderRadius: (tplEl as any).borderRadius,
+        borderColor: (tplEl as any).borderColor,
+        borderWidth: (tplEl as any).borderWidth,
       });
     } else {
       // 根据模板文案填充
