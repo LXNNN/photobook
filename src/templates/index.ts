@@ -324,6 +324,8 @@ export const TEMPLATES: TemplateDefinition[] = [
     description: '顶部标题+中间左大图右两小图+底部正文，简约文艺',
     thumbnail: 'three-title-top',
     elements: [
+      // 右上角装饰英文（固定内容，不填充文案）
+      { type: 'text', x: 0.3189, y: 0.0614, width: 0.6, height: 0.0348, placeholder: 'HAVEAGOODTIME', fixed: true, fontSizeRatio: 0.0191, textAlign: 'right', fontWeight: 'normal', color: '#333333' },
       // 标题
       { type: 'text', x: 0.0927, y: 0.1091, width: 0.84, height: 0.08, placeholder: '在这里写标题', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
       // 左中大图
