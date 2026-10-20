@@ -201,8 +201,7 @@ function TemplateActions({ page, pageIndex, onDone }: { page: Page; pageIndex: n
     }
 
     setCreateState('creating');
-    // 【临时】硬编码为 atmosphere，用于本地加氛围感模板，完成后恢复为 project.styleId ?? 'classic'
-    const tpl = createTemplateFromPage(page, project.format, name, 'atmosphere');
+    const tpl = createTemplateFromPage(page, project.format, name, project.styleId ?? 'classic');
     await persistTemplate(tpl);
     // 当前页改挂到新模板上
     dispatch(setPageTemplateId({ pageIndex, templateId: tpl.id }));
@@ -267,8 +266,7 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
   const project = useAppSelector((s) => s.project.current);
   const format = project?.format;
   // 相册风格：经典图文只给基础功能，氛围感给全套花式选区
-  // 【临时】硬编码为 atmosphere，用于本地加氛围感模板，完成后恢复为 project?.styleId ?? 'classic'
-  const styleId = 'atmosphere' as const;
+  const styleId = project?.styleId ?? 'classic';
 
   // 添加照片选区（空图片占位符）
   const handleAddImageSlot = () => {

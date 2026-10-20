@@ -12,7 +12,7 @@ import { DEFAULT_BODY_COLOR, DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
 export interface TemplateDefinition {
   id: string;
   name: string;
-  category: '封面' | '尾页' | '一图' | '二图' | '三图' | '四图' | '五图' | '六图' | '十图' | '文字封面' | '我的模板';
+  category: '封面' | '尾页' | '一图' | '二图' | '三图' | '四图' | '五图' | '六图' | '十图' | '十二图' | '文字封面' | '我的模板';
   description: string;
   /** 缩略图用的 SVG 路径（用于模板面板预览） */
   thumbnail: string;
@@ -20,6 +20,8 @@ export interface TemplateDefinition {
   elements: TemplateElement[];
   /** 相册风格：不填 = classic（经典图文排版）。氛围感设计的模板标 'atmosphere' */
   styleId?: AlbumStyleId;
+  /** 黑色类型标识：预留字段，后续用于区分不同的黑色处理方案 */
+  blackType?: number;
 }
 
 export interface TemplateElement {
@@ -41,8 +43,6 @@ export interface TemplateElement {
   body?: boolean;
   /** 短正文标记：空间小的正文区域，从主题短正文库取一行短句，不用长正文 */
   shortBody?: boolean;
-  /** 一句话标语标记：极短文案（4-10字），从主题 taglines 取，用于极小区域 */
-  tagline?: boolean;
   /** 文字元素的默认字号（相对页面宽度的比例）；正文标记的元素只是备用基准 */
   fontSizeRatio?: number;
   /** 文字对齐 */
@@ -55,6 +55,22 @@ export interface TemplateElement {
   backgroundColor?: string;
   /** 图片元素的裁剪提示 */
   cropHint?: 'cover' | 'contain';
+  /** 图片元素的胶卷边缘效果（电影胶片边框） */
+  filmEdge?: boolean;
+  /** 胶卷选区左边黑边，默认true */
+  filmLeftEdge?: boolean;
+  /** 胶卷选区右边黑边，默认true */
+  filmRightEdge?: boolean;
+  /** @deprecated 旧的左右边框总开关，已拆分，保留兼容 */
+  filmSideEdge?: boolean;
+  /** 照片选区边框宽度（mm），不填=无边框 */
+  borderWidth?: number;
+  /** 照片选区边框颜色，默认黑色 */
+  borderColor?: string;
+  /** 形状元素：手绘时钟样式（刻度+指针+中心文字） */
+  clockStyle?: boolean;
+  /** 形状元素：手撕纸条样式（暖色背景+手撕边缘+底部手绘线） */
+  tornPaper?: boolean;
   /** 图片元素的裁剪区域（相对原图，0-1）；不填则铺满整张图 */
   crop?: CropArea;
   /** 元素透明度 0-1，不填按 1 处理 */
@@ -136,6 +152,85 @@ export const TEMPLATES: TemplateDefinition[] = [
     category: '尾页',
     description: '居中方形照片+未完待续+年份，简约文艺尾页',
     thumbnail: 'ending-minimal',
+    elements: [
+      // 居中方形照片
+      { type: 'image', x: 0.309, y: 0.206, width: 0.378, height: 0.252, cropHint: 'cover' },
+      // 未完待续
+      { type: 'text', x: 0.199, y: 0.505, width: 0.602, height: 0.05, placeholder: '未完待续', fontSizeRatio: 0.033, textAlign: 'center', fontWeight: 'bold', color: '#333333' },
+      // 年份（动态获取当前年份）
+      { type: 'text', x: 0.199, y: 0.547, width: 0.602, height: 0.04, placeholder: '{year}', fontSizeRatio: 0.031, textAlign: 'center', fontWeight: 'normal', color: '#333333' },
+    ],
+  },
+
+  // ============ 氛围感设计 - 封面/尾页 ============
+  {
+    id: 'atm-cover-minimal',
+    name: '极简封面',
+    category: '封面',
+    description: '左上角大标题，简洁高级，适合文艺风',
+    thumbnail: 'cover-minimal',
+    styleId: 'atmosphere',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 1, height: 1, cropHint: 'cover' },
+      { type: 'text', x: 0.08, y: 0.15, width: 0.6, height: 0.1, placeholder: '时光印记', fontSizeRatio: 0.08, textAlign: 'left', fontWeight: 'bold', color: '#ffffff' },
+      { type: 'text', x: 0.08, y: 0.26, width: 0.5, height: 0.04, placeholder: 'MEMORIES', fontSizeRatio: 0.025, textAlign: 'left', color: '#ffffff' },
+      { type: 'text', x: 0.08, y: 0.85, width: 0.4, height: 0.04, placeholder: '2026', fontSizeRatio: 0.03, textAlign: 'left', color: '#ffffff' },
+    ],
+  },
+  {
+    id: 'atm-cover-travel-journal',
+    name: '杂志封面',
+    category: '封面',
+    description: '白底大标题 + 满幅大图，左侧四角星与竖排 TIME 装饰，极简杂志风',
+    thumbnail: 'cover-travel-journal',
+    styleId: 'atmosphere',
+    elements: [
+      // 照片（满幅大图，四周留白；顶部文字区加大、图片高度减小）
+      { type: 'image', x: 0.082, y: 0.431, width: 0.828, height: 0.506, cropHint: 'cover' },
+      // 右上大标题（可修改，右侧对齐基准）
+      { type: 'text', x: 0.667, y: 0.063, width: 0.256, height: 0.13, placeholder: '时间\n旅行纪', fontSizeRatio: 0.11, textAlign: 'right', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1.05 },
+      // ——作者名（标题下方）
+      { type: 'text', x: 0.663, y: 0.228, width: 0.256, height: 0.025, placeholder: '——作者名', fontSizeRatio: 0.031, textAlign: 'right', color: '#888888', lineHeight: 1, fixed: true },
+      // 两个四角星（小、大，位于 TIME 上方）
+      { type: 'text', x: 0.102, y: 0.074, width: 0.034, height: 0.026, placeholder: '✦', fontSizeRatio: 0.041, textAlign: 'center', color: '#1a1a1a', lineHeight: 1, fixed: true },
+      { type: 'text', x: 0.136, y: 0.048, width: 0.046, height: 0.032, placeholder: '✦', fontSizeRatio: 0.055, textAlign: 'center', color: '#1a1a1a', lineHeight: 1, fixed: true },
+      // TIME 竖排：每个字母单独向右旋转 90°，衬线字体
+      { type: 'text', x: 0.126, y: 0.114, width: 0.062, height: 0.045, placeholder: 'T', fontSizeRatio: 0.167, textAlign: 'center', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1, rotation: 90, fontFamily: 'Georgia, "Times New Roman", serif', fixed: true },
+      { type: 'text', x: 0.129, y: 0.17, width: 0.062, height: 0.045, placeholder: 'I', fontSizeRatio: 0.167, textAlign: 'center', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1, rotation: 90, fontFamily: 'Georgia, "Times New Roman", serif', fixed: true },
+      { type: 'text', x: 0.129, y: 0.243, width: 0.062, height: 0.045, placeholder: 'M', fontSizeRatio: 0.167, textAlign: 'center', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1, rotation: 90, fontFamily: 'Georgia, "Times New Roman", serif', fixed: true },
+      { type: 'text', x: 0.09, y: 0.306, width: 0.091, height: 0.079, placeholder: 'E', fontSizeRatio: 0.167, textAlign: 'center', fontWeight: 'normal', color: '#1a1a1a', lineHeight: 1, rotation: 90, fontFamily: 'Georgia, "Times New Roman", serif', fixed: true },
+      // 标题下方中文小字（可修改，右侧与大标题对齐）
+      { type: 'text', x: 0.489, y: 0.274, width: 0.43, height: 0.018, placeholder: '・这一路的风景 ・从我的视角展开', fontSizeRatio: 0.029, textAlign: 'right', color: '#555555', lineHeight: 1, fixed: true },
+      // 对应英文大写（可修改，右侧对齐）
+      { type: 'text', x: 0.489, y: 0.296, width: 0.43, height: 0.015, placeholder: 'THE SCENERY ALONG THE WAY FROM MY PERSPECTIVE', fontSizeRatio: 0.017, textAlign: 'right', color: '#999999', lineHeight: 1, fixed: true },
+      // 见天地，见众生，见自己（可修改，右侧对齐）
+      { type: 'text', x: 0.489, y: 0.334, width: 0.43, height: 0.02, placeholder: '见天地，见众生，见自己', fontSizeRatio: 0.043, textAlign: 'right', color: '#333333', lineHeight: 1, fixed: true },
+      // 底部两行浅灰小字
+      { type: 'text', x: 0.2, y: 0.96, width: 0.6, height: 0.012, placeholder: 'CHERISH EVERY MOMENT', fontSizeRatio: 0.017, textAlign: 'center', color: '#c8c8c8', lineHeight: 1, fixed: true },
+      { type: 'text', x: 0.2, y: 0.973, width: 0.6, height: 0.012, placeholder: 'COLLECT BEAUTIFUL MEMORIES OF LIFE', fontSizeRatio: 0.017, textAlign: 'center', color: '#c8c8c8', lineHeight: 1, fixed: true },
+    ],
+  },
+  {
+    id: 'atm-ending-page',
+    name: '尾页1',
+    category: '尾页',
+    description: '全幅大图+居中寄语，适合做尾页',
+    thumbnail: 'ending-page',
+    styleId: 'atmosphere',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 1, height: 1, cropHint: 'cover' },
+      { type: 'text', x: 0.15, y: 0.3, width: 0.7, height: 0.1, placeholder: '未完待续', fontSizeRatio: 0.07, textAlign: 'center', fontWeight: 'bold', color: '#ffffff' },
+      { type: 'text', x: 0.2, y: 0.45, width: 0.6, height: 0.15, placeholder: '每一段旅程都是一次成长，期待下一次出发。', fontSizeRatio: 0.03, textAlign: 'center', color: '#ffffff' },
+      { type: 'text', x: 0.15, y: 0.7, width: 0.7, height: 0.05, placeholder: 'THANK YOU', fontSizeRatio: 0.025, textAlign: 'center', color: '#ffffff' },
+    ],
+  },
+  {
+    id: 'atm-ending-minimal',
+    name: '尾页2',
+    category: '尾页',
+    description: '居中方形照片+未完待续+年份，简约文艺尾页',
+    thumbnail: 'ending-minimal',
+    styleId: 'atmosphere',
     elements: [
       // 居中方形照片
       { type: 'image', x: 0.309, y: 0.206, width: 0.378, height: 0.252, cropHint: 'cover' },
@@ -317,8 +412,33 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'image', x: 0.362, y: 0.321, width: 0.284, height: 0.429, cropHint: 'cover' },
       // 右上方第三张
       { type: 'image', x: 0.666, y: 0.183, width: 0.284, height: 0.429, cropHint: 'cover' },
-      // 右下角一行短句文案（正常正文，从短正文库取，右对齐）
-      { type: 'text', x: 0.5358, y: 0.8457, width: 0.3655, height: 0.041, placeholder: '在这里写一句话', body: true, shortBody: true, fontSizeRatio: 0.0191, textAlign: 'right', fontWeight: 'normal', color: '#333333' },
+      // 右下角一行文案（从文案库映射，右对齐）
+      { type: 'text', x: 0.5358, y: 0.8457, width: 0.3655, height: 0.041, placeholder: '在这里写下一句感悟...', body: true, shortBody: true, fontSizeRatio: 0.0191, textAlign: 'right', fontWeight: 'normal', color: '#333333' },
+    ],
+  },
+  {
+    id: 'atm-three-snapshots',
+    name: '三图快照错落',
+    category: '三图',
+    description: '三图错落排列+英文装饰文字，文艺快照风格',
+    thumbnail: '',
+    styleId: 'atmosphere',
+    blackType: 1,
+    elements: [
+      // 第1张图
+      { type: 'image', x: 0.15, y: 0.1615, width: 0.4459, height: 0.1905, cropHint: 'cover' },
+      // 第2张图
+      { type: 'image', x: 0.3798, y: 0.381, width: 0.4459, height: 0.1905, cropHint: 'cover' },
+      // 第3张图
+      { type: 'image', x: 0.15, y: 0.6013, width: 0.4459, height: 0.1905, cropHint: 'cover' },
+      // 装饰英文 Snapshots（Playfair Display，固定内容）
+      { type: 'text', x: 0.1277, y: 0.4563, width: 0.1929, height: 0.0398, placeholder: 'Snapshots', fixed: true, fontSizeRatio: 0.0477, textAlign: 'left', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Playfair Display", serif' },
+      // 装饰英文 Moments（固定内容）
+      { type: 'text', x: 0.6537, y: 0.2398, width: 0.2593, height: 0.0545, placeholder: 'Moments', fixed: true, fontSizeRatio: 0.0477, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      // 装饰英文 Fragments（固定内容）
+      { type: 'text', x: 0.6452, y: 0.6833, width: 0.2678, height: 0.0543, placeholder: 'Fragments', fixed: true, fontSizeRatio: 0.0477, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      // 底部标题 Forever memories.（固定内容，居中加粗）
+      { type: 'text', x: 0.2242, y: 0.8715, width: 0.6, height: 0.0645, placeholder: 'Forever memories.', fixed: true, fontSizeRatio: 0.0548, textAlign: 'center', fontWeight: 'bold', color: '#2c2c2c', lineHeight: 1.5 },
     ],
   },
   {
@@ -580,6 +700,52 @@ export const TEMPLATES: TemplateDefinition[] = [
     ],
   },
   {
+    id: 'atm-six-film-strip',
+    name: '六图胶卷错落',
+    category: '六图',
+    description: '三排错落排列，仿胶卷电影感，适合旅行记录',
+    thumbnail: '',
+    styleId: 'atmosphere',
+    blackType: 1,
+    elements: [
+      // 第1排左图（去掉左边框）
+      { type: 'image', x: 0.0012, y: 0.1854, width: 0.3291, height: 0.1681, cropHint: 'cover', filmEdge: true, filmLeftEdge: false },
+      // 第1排中图
+      { type: 'image', x: 0.3299, y: 0.1854, width: 0.3446, height: 0.1681, cropHint: 'cover', filmEdge: true },
+      // 第1排右图（去掉右边框）
+      { type: 'image', x: 0.6745, y: 0.1854, width: 0.3243, height: 0.1681, cropHint: 'cover', filmEdge: true, filmRightEdge: false },
+      // 第2排左图（去掉左边框）
+      { type: 'image', x: 0.3264, y: 0.4292, width: 0.349, height: 0.1441, cropHint: 'cover', filmEdge: true, filmLeftEdge: false },
+      // 第2排右图（去掉右边框）
+      { type: 'image', x: 0.6745, y: 0.429, width: 0.3243, height: 0.1443, cropHint: 'cover', filmEdge: true, filmRightEdge: false },
+      // 第3排左图（只有一张，左右边框都去掉）
+      { type: 'image', x: 0.0012, y: 0.6484, width: 0.5081, height: 0.1633, cropHint: 'cover', filmEdge: true, filmLeftEdge: false, filmRightEdge: false },
+    ],
+  },
+  {
+    id: 'atm-five-banner-diary',
+    name: '五图横幅日记',
+    category: '五图',
+    description: '顶部横幅大图+底部错落小图+日期文字，旅行日记感',
+    thumbnail: '',
+    styleId: 'atmosphere',
+    blackType: 2,
+    elements: [
+      // 顶部横幅大图
+      { type: 'image', x: 0, y: 0, width: 0.9987, height: 0.3679, cropHint: 'cover' },
+      // 右侧中间小图
+      { type: 'image', x: 0.7133, y: 0.3361, width: 0.1991, height: 0.1407, cropHint: 'cover', borderWidth: 1, borderColor: '#e9dddd' },
+      // 底部左小图
+      { type: 'image', x: 0.2559, y: 0.6429, width: 0.2027, height: 0.1429, cropHint: 'cover', borderWidth: 0.5, borderColor: '#666666' },
+      // 底部中小图
+      { type: 'image', x: 0.4834, y: 0.6429, width: 0.2027, height: 0.1429, cropHint: 'cover', borderWidth: 0.5, borderColor: '#666666' },
+      // 底部右小图
+      { type: 'image', x: 0.7097, y: 0.6429, width: 0.2027, height: 0.1429, cropHint: 'cover', borderWidth: 0.5, borderColor: '#666666' },
+      // 日期文字（右对齐，固定装饰文字）
+      { type: 'text', x: 0.0516, y: 0.6767, width: 0.1635, height: 0.0752, placeholder: '2026年3月12日\n地点', fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
     id: 'nine-grid-avatar',
     name: '九宫格头像',
     category: '十图',
@@ -604,6 +770,42 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'image', x: 0.052, y: 0.7526, width: 0.2905, height: 0.2143, cropHint: 'cover' },
       { type: 'image', x: 0.3545, y: 0.7526, width: 0.2905, height: 0.2143, cropHint: 'cover' },
       { type: 'image', x: 0.657, y: 0.7526, width: 0.2905, height: 0.2143, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'atm-clock-twelve',
+    name: '十二图时钟',
+    category: '十二图',
+    description: '手绘时钟风格，12张照片围绕时钟排列，记录每一刻美好时光',
+    thumbnail: '',
+    styleId: 'atmosphere',
+    elements: [
+      // 中心手绘时钟
+      { type: 'shape', x: 0.3, y: 0.38, width: 0.4, height: 0.24, backgroundColor: 'transparent', clockStyle: true },
+      // 12点方向
+      { type: 'image', x: 0.4257, y: 0.1524, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 1点方向
+      { type: 'image', x: 0.6351, y: 0.1919, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 2点方向
+      { type: 'image', x: 0.7885, y: 0.3, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 3点方向
+      { type: 'image', x: 0.8446, y: 0.4476, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 4点方向
+      { type: 'image', x: 0.7885, y: 0.5952, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 5点方向
+      { type: 'image', x: 0.6351, y: 0.7033, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 6点方向
+      { type: 'image', x: 0.4257, y: 0.7429, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 7点方向
+      { type: 'image', x: 0.2162, y: 0.7033, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 8点方向
+      { type: 'image', x: 0.0628, y: 0.5952, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 9点方向
+      { type: 'image', x: 0.0068, y: 0.4476, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 10点方向
+      { type: 'image', x: 0.0628, y: 0.3, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      // 11点方向
+      { type: 'image', x: 0.2162, y: 0.1919, width: 0.1486, height: 0.1048, cropHint: 'cover' },
     ],
   },
 ];
@@ -674,6 +876,14 @@ export function applyTemplate(
         imageId,
         // 拷贝一份，避免多个页面共用同一个 crop 对象
         crop: tplEl.crop ? { ...tplEl.crop } : { x: 0, y: 0, width: 1, height: 1 },
+        // 胶卷边缘效果
+        filmEdge: tplEl.filmEdge === true,
+        // 胶卷左右黑边（独立控制，默认true；filmSideEdge是旧总开关，兼容）
+        filmLeftEdge: tplEl.filmLeftEdge ?? tplEl.filmSideEdge ?? true,
+        filmRightEdge: tplEl.filmRightEdge ?? tplEl.filmSideEdge ?? true,
+        // 照片选区边框
+        borderWidth: tplEl.borderWidth,
+        borderColor: tplEl.borderColor,
       });
     } else if (tplEl.type === 'shape') {
       // 普通选区（形状元素）
@@ -684,6 +894,8 @@ export function applyTemplate(
         borderRadius: (tplEl as any).borderRadius,
         borderColor: (tplEl as any).borderColor,
         borderWidth: (tplEl as any).borderWidth,
+        clockStyle: (tplEl as any).clockStyle === true,
+        tornPaper: (tplEl as any).tornPaper === true,
       });
     } else {
       // 根据模板文案填充
@@ -702,13 +914,6 @@ export function applyTemplate(
       // 固定文字（比如装饰小标签）保持原样，不填充文案
       if ((tplEl as any).fixed) {
         content = tplEl.placeholder || '';
-      } else if ((tplEl as any).tagline === true) {
-        // 一句话标语：从主题 taglines 取4-10字的极短标语
-        if (theme && theme.taglines && theme.taglines.length > 0) {
-          content = theme.taglines[Math.floor(Math.random() * theme.taglines.length)];
-        } else {
-          content = tplEl.placeholder || '';
-        }
       } else if (isBody) {
         // 正文：主题文案库优先；标记 shortBody 的用主题短正文（一行短句），普通正文用主题长正文
         const isShortBody = (tplEl as any).shortBody === true;
@@ -782,7 +987,6 @@ export function applyTemplate(
         // 小空间里的短句会被长正文顶掉、撑出文字框。
         body: isBody,
         shortBody: tplEl.shortBody === true,
-        tagline: tplEl.tagline === true,
         title,
       });
     }
@@ -1063,7 +1267,7 @@ export function reapplyTemplateKeepingContent(
 /**
  * 模板分类的固定显示顺序
  */
-const CATEGORY_ORDER: TemplateDefinition['category'][] = ['封面', '尾页', '一图', '二图', '三图', '四图', '五图', '六图', '十图', '文字封面', '我的模板'];
+const CATEGORY_ORDER: TemplateDefinition['category'][] = ['封面', '尾页', '一图', '二图', '三图', '四图', '五图', '六图', '十图', '十二图', '文字封面', '我的模板'];
 
 /**
  * 获取模板分类列表（按固定顺序排列）
