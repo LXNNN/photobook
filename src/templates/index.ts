@@ -315,8 +315,8 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'image', x: 0.362, y: 0.321, width: 0.284, height: 0.429, cropHint: 'cover' },
       // 右上方第三张
       { type: 'image', x: 0.666, y: 0.183, width: 0.284, height: 0.429, cropHint: 'cover' },
-      // 右下角装饰英文（固定内容，不填充文案，右对齐）
-      { type: 'text', x: 0.5358, y: 0.8457, width: 0.3655, height: 0.041, placeholder: 'Collecting moments, one frame at a time.', fixed: true, fontSizeRatio: 0.0191, textAlign: 'right', fontWeight: 'normal', color: '#333333' },
+      // 右下角一行文案（从文案库映射，右对齐）
+      { type: 'text', x: 0.5358, y: 0.8457, width: 0.3655, height: 0.041, placeholder: '在这里写下一句感悟...', body: true, shortBody: true, fontSizeRatio: 0.0191, textAlign: 'right', fontWeight: 'normal', color: '#333333' },
     ],
   },
   {
@@ -347,8 +347,6 @@ export const TEMPLATES: TemplateDefinition[] = [
     description: '顶部右对齐标题+上方两小图+中间横大图+底部正文，错落有致',
     thumbnail: 'three-top-two-bottom-wide',
     elements: [
-      // 左上角装饰英文（固定内容，Playfair Display字体，8pt）
-      { type: 'text', x: 0.1047, y: 0.0705, width: 0.2243, height: 0.0424, placeholder: 'The sunshine is just right', fixed: true, fontFamily: 'Playfair Display', fontSizeRatio: 0.0191, textAlign: 'left', fontWeight: 'normal', color: '#2c2c2c' },
       // 标题（右对齐）
       { type: 'text', x: 0.4614, y: 0.1656, width: 0.38, height: 0.05, placeholder: '在这里写标题', fontSizeRatio: 0.045, textAlign: 'right', fontWeight: 'bold', color: '#2c2c2c' },
       // 左上小图
@@ -358,7 +356,7 @@ export const TEMPLATES: TemplateDefinition[] = [
       // 中间横大图
       { type: 'image', x: 0.1507, y: 0.4867, width: 0.6969, height: 0.2379, cropHint: 'cover' },
       // 正文
-      { type: 'text', x: 0.1507, y: 0.7739, width: 0.6954, height: 0.18, placeholder: '在这里写下你的故事和感受...', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.152, y: 0.1414, width: 0.6953, height: 0.0776, placeholder: '在这里写下你的故事和感受...', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333', lineHeight: 1.5 },
     ],
   },
   {
