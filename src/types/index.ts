@@ -90,6 +90,15 @@ export interface ImageElement extends BaseElement {
    */
   filmEdge?: boolean;
   /**
+   * 胶卷选区的左边黑边：默认 true（显示）；设为 false 隐藏左边框。
+   * 仅在 filmEdge=true 时生效。filmSideEdge 是旧的总开关，已废弃，保留兼容。
+   */
+  filmLeftEdge?: boolean;
+  /** 胶卷选区的右边黑边：默认 true（显示）；设为 false 隐藏右边框。 */
+  filmRightEdge?: boolean;
+  /** @deprecated 旧的左右边框总开关，已拆为 filmLeftEdge / filmRightEdge，保留兼容 */
+  filmSideEdge?: boolean;
+  /**
    * 卡片选区：白卡片 + 四周留白（下边最大）+ 底部浅弧贝壳边 + 柔光投影。
    * 「页面属性 → 添加选区 → 卡片选区」按钮创建；几何常量（边距/波浪/投影）见 drawPageContent。
    */
@@ -99,6 +108,10 @@ export interface ImageElement extends BaseElement {
    * 「页面属性 → 添加选区 → 圆形选区」按钮创建；绘制见 drawImageElement 的 clip 分支。
    */
   circleEdge?: boolean;
+  /** 照片选区边框宽度（mm），不填=无边框 */
+  borderWidth?: number;
+  /** 照片选区边框颜色，默认黑色 */
+  borderColor?: string;
 }
 
 /**
@@ -114,6 +127,10 @@ export interface ShapeElement extends BaseElement {
   borderColor?: string;
   /** 边框宽度（mm） */
   borderWidth?: number;
+  /** 手绘时钟样式：true时绘制手绘时钟（刻度+指针+中心文字），忽略背景色 */
+  clockStyle?: boolean;
+  /** 手撕纸条样式：暖色背景+四周手撕边缘+底部手绘下划线 */
+  tornPaper?: boolean;
 }
 
 export interface CropArea {
@@ -167,6 +184,11 @@ export interface TextElement extends BaseElement {
    * 和 body 成对使用；不填 = 普通正文。
    */
   shortBody?: boolean;
+  /**
+   * 一句话标语标记：空间极小的文字区域，从主题的 taglines 里取4-10字的极短标语。
+   * 比 shortBody 更短，用于右下角标签等极小区域。
+   */
+  tagline?: boolean;
   /**
    * 标题标记：「📝 添加文字 → 添加标题」做出来的那段标题。
    * true = 标题；false = 明确不是标题（手动写的正文）；不填 = 模板做的或

@@ -67,8 +67,9 @@ export default function PropertyPanel({ pages, activePageIndex, selectedIds, pro
     if (!selectedElement) return;
     const next = { ...updates };
     if (format) {
-      // X/Y 输入框按元素所在页夹紧（拖拽本身已经在交互层夹过了）
-      if (next.x !== undefined) next.x = clampPosition(next.x, selectedElement.el.width, format.width);
+      // X 输入框放宽到 -20~150（只影响输入框，拖拽在交互层夹紧）
+      if (next.x !== undefined) next.x = Math.max(-20, Math.min(150, next.x));
+      // Y 输入框按页面夹紧
       if (next.y !== undefined) next.y = clampPosition(next.y, selectedElement.el.height, format.height);
     }
     dispatch(updateElement({ pageIndex: selectedElement.pageIndex, elementId: selectedElement.el.id, updates: next }));
@@ -200,7 +201,8 @@ function TemplateActions({ page, pageIndex, onDone }: { page: Page; pageIndex: n
     }
 
     setCreateState('creating');
-    const tpl = createTemplateFromPage(page, project.format, name, project.styleId ?? 'classic');
+    // 【临时】硬编码为 atmosphere，用于本地加氛围感模板，完成后恢复为 project.styleId ?? 'classic'
+    const tpl = createTemplateFromPage(page, project.format, name, 'atmosphere');
     await persistTemplate(tpl);
     // 当前页改挂到新模板上
     dispatch(setPageTemplateId({ pageIndex, templateId: tpl.id }));
@@ -265,7 +267,8 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
   const project = useAppSelector((s) => s.project.current);
   const format = project?.format;
   // 相册风格：经典图文只给基础功能，氛围感给全套花式选区
-  const styleId = project?.styleId ?? 'classic';
+  // 【临时】硬编码为 atmosphere，用于本地加氛围感模板，完成后恢复为 project?.styleId ?? 'classic'
+  const styleId = 'atmosphere' as const;
 
   // 添加照片选区（空图片占位符）
   const handleAddImageSlot = () => {
@@ -615,7 +618,7 @@ function PositionFields({ el, onChange }: { el: Element; onChange: (u: Partial<E
     <div className="grid grid-cols-2 gap-2 pt-3 border-t border-gray-100">
       <div>
         <label className="block text-xs text-gray-500 mb-1.5">X (mm)</label>
-        <input type="number" value={Math.round(el.x * 10) / 10} step="0.5"
+        <input type="number" value={Math.round(el.x * 10) / 10} step="0.5" min="-20" max="150"
           onChange={(e) => onChange({ x: parseFloat(e.target.value) || 0 })}
           className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded" />
       </div>
@@ -948,6 +951,57 @@ function ImagePropertyPanel({ el, pageIndex, onUpdate, projectId }: ImagePanelPr
           <input type="range" min="-180" max="180" step="1" value={el.rotation}
             onChange={(e) => onUpdate({ rotation: parseFloat(e.target.value) })} className="w-full" />
         </div>
+        {/* 照片选区边框 */}
+        {!el.filmEdge && !el.stampEdge && (
+          <div className="pt-3 border-t border-gray-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-gray-500">边框宽度(mm)</label>
+              <input
+                type="number"
+                min="0"
+                max="10"
+                step="0.5"
+                value={el.borderWidth || 0}
+                onChange={(e) => onUpdate({ borderWidth: parseFloat(e.target.value) || 0 })}
+                className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right"
+              />
+            </div>
+            {(el.borderWidth || 0) > 0 && (
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-500">边框颜色</label>
+                <input
+                  type="color"
+                  value={el.borderColor || '#000000'}
+                  onChange={(e) => onUpdate({ borderColor: e.target.value })}
+                  className="w-8 h-6 border border-gray-200 rounded cursor-pointer"
+                />
+              </div>
+            )}
+          </div>
+        )}
+        {/* 胶卷选区：左右边框独立开关 */}
+        {el.filmEdge && (
+          <div className="pt-3 border-t border-gray-100 space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(el.filmLeftEdge ?? el.filmSideEdge ?? true) === true}
+                onChange={(e) => onUpdate({ filmLeftEdge: e.target.checked })}
+                className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+              />
+              <span className="text-sm text-gray-600">显示左边框</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(el.filmRightEdge ?? el.filmSideEdge ?? true) === true}
+                onChange={(e) => onUpdate({ filmRightEdge: e.target.checked })}
+                className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+              />
+              <span className="text-sm text-gray-600">显示右边框</span>
+            </label>
+          </div>
+        )}
       </div>
 
       {/* 裁剪对话框 */}

@@ -56,6 +56,7 @@ interface UsedTexts {
   pageTitles: Set<string>;
   paragraphs: Set<string>;
   shortParagraphs: Set<string>;
+  taglines: Set<string>;
 }
 
 /** 单页最多放几张（普通页面） */
@@ -683,6 +684,18 @@ function getUniqueShortParagraph(theme: Theme, used: UsedTexts): string {
   return text;
 }
 
+/** 一句话标语（4-10字），给极小的文字区域用 */
+function getUniqueTagline(theme: Theme, used: UsedTexts): string {
+  const available = theme.taglines.filter((t) => !used.taglines.has(t));
+  if (available.length === 0) {
+    used.taglines.clear();
+    return randomPick(theme.taglines);
+  }
+  const text = randomPick(available);
+  used.taglines.add(text);
+  return text;
+}
+
 /**
  * 自动生成电子相册
  */
@@ -707,6 +720,7 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
     pageTitles: new Set(),
     paragraphs: new Set(),
     shortParagraphs: new Set(),
+    taglines: new Set(),
   };
 
   const pages: Page[] = [];
@@ -914,10 +928,12 @@ function fillTextElements(elements: Element[], theme: Theme, used: UsedTexts, fo
     // 固定文字（比如装饰小标签）保持原样，不填充
     if (textEl.fixed) continue;
 
-    // 正文标记优先：短正文取一行短句（文字框小，长正文会撑出去），
+    // 正文标记优先：tagline取极短标语（4-10字），短正文取一行短句，
     // 普通正文取长文案；没标的按字号是否到标题线判标题；
     // 都不是的（装饰小字、短标签）不动
-    if (textEl.shortBody) {
+    if (textEl.tagline) {
+      textEl.content = getUniqueTagline(theme, used);
+    } else if (textEl.shortBody) {
       textEl.content = getUniqueShortParagraph(theme, used);
     } else if (textEl.body) {
       textEl.content = getUniqueParagraph(theme, used);

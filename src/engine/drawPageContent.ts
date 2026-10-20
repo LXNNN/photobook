@@ -116,6 +116,8 @@ function drawElement(
 
 /** 胶卷选区：上下黑边各占元素高度的比例 */
 const FILM_STRIP_RATIO = 0.12;
+/** 胶卷选区：左右黑色边框宽度（mm，约2px@96dpi） */
+const FILM_SIDE_BORDER_MM = 0.53;
 /** 卡片选区：左右留白占宽度的比例 */
 const CARD_MARGIN_X = 0.04;
 /** 卡片选区：上留白占高度的比例 */
@@ -133,7 +135,10 @@ const CARD_WAVE_AMP = 0.02;
 export function elementPhotoArea(el: ImageElement): { x: number; y: number; width: number; height: number } {
   if (el.filmEdge) {
     const strip = el.height * FILM_STRIP_RATIO;
-    return { x: 0, y: strip, width: el.width, height: el.height - strip * 2 };
+    // 左右边框独立控制：filmLeftEdge/filmRightEdge，兼容旧的 filmSideEdge 总开关
+    const left = (el.filmLeftEdge ?? el.filmSideEdge ?? true) ? FILM_SIDE_BORDER_MM : 0;
+    const right = (el.filmRightEdge ?? el.filmSideEdge ?? true) ? FILM_SIDE_BORDER_MM : 0;
+    return { x: left, y: strip, width: el.width - left - right, height: el.height - strip * 2 };
   }
   if (el.cardEdge) {
     const marginX = el.width * CARD_MARGIN_X;
@@ -161,8 +166,10 @@ function drawImageElement(
   if (el.cardEdge) {
     drawCard(ctx, x, y, w, h);
   } else if (el.filmEdge) {
-    // 胶卷选区：上下黑边 + 白孔
-    drawFilmStrips(ctx, x, y, w, h, h * FILM_STRIP_RATIO, pageBgColor);
+    // 胶卷选区：上下黑边 + 白孔 + 左右黑边（独立控制）
+    const leftPx = (el.filmLeftEdge ?? el.filmSideEdge ?? true) ? mmToPx(FILM_SIDE_BORDER_MM, dpi) : 0;
+    const rightPx = (el.filmRightEdge ?? el.filmSideEdge ?? true) ? mmToPx(FILM_SIDE_BORDER_MM, dpi) : 0;
+    drawFilmStrips(ctx, x, y, w, h, h * FILM_STRIP_RATIO, leftPx, rightPx, pageBgColor);
   }
 
   // 照片画在照片区（邮票 = 整个元素；胶卷/卡片 = 各自的照片区）
@@ -200,6 +207,23 @@ function drawImageElement(
   }
 
   ctx.restore();
+
+  // 照片选区边框（普通矩形/圆形，胶卷邮票等特殊选区不画）
+  if (el.borderWidth && el.borderWidth > 0 && !el.filmEdge && !el.stampEdge) {
+    ctx.save();
+    ctx.strokeStyle = el.borderColor || '#000000';
+    ctx.lineWidth = mmToPx(el.borderWidth, dpi);
+    if (el.circleEdge) {
+      // 圆形选区：圆形边框
+      ctx.beginPath();
+      ctx.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      // 普通矩形选区：矩形边框
+      ctx.strokeRect(x, y, w, h);
+    }
+    ctx.restore();
+  }
 }
 
 /**
@@ -249,11 +273,16 @@ function drawFilmStrips(
   w: number,
   h: number,
   strip: number,
+  leftBorder: number,
+  rightBorder: number,
   pageBgColor: string
 ): void {
   ctx.fillStyle = '#000000';
   ctx.fillRect(x, y, w, strip);
   ctx.fillRect(x, y + h - strip, w, strip);
+  // 左右黑色边框（独立控制，0表示不绘制）
+  if (leftBorder > 0) ctx.fillRect(x, y, leftBorder, h);
+  if (rightBorder > 0) ctx.fillRect(x + w - rightBorder, y, rightBorder, h);
 
   const holeH = strip * 0.55;
   const holeW = holeH * 1.43;
@@ -355,7 +384,139 @@ function buildStampPath(
 }
 
 /** 绘制形状/选区元素 */
+/**
+ * 手绘时钟：12个刻度 + 时针/分针/秒针 + 中心圆点
+ * 指针固定为参考图样式：时针10点、分针2点、秒针6点
+ */
+function drawClock(ctx: CanvasRenderingContext2D, el: ShapeElement, dpi: number): void {
+  const cx = mmToPx(el.x + el.width / 2, dpi);
+  const cy = mmToPx(el.y + el.height / 2, dpi);
+  const r = Math.min(mmToPx(el.width, dpi), mmToPx(el.height, dpi)) / 2 * 0.75;
+
+  ctx.save();
+  ctx.globalAlpha = el.opacity ?? 1;
+  ctx.strokeStyle = '#333333';
+  ctx.lineCap = 'round';
+
+  // 12个刻度
+  ctx.lineWidth = Math.max(2, r * 0.04);
+  for (let i = 0; i < 12; i++) {
+    const angle = (-90 + i * 30) * Math.PI / 180;
+    const inner = r * 0.82;
+    const outer = r * 0.95;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+    ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+    ctx.stroke();
+  }
+
+  // 时针（10点方向，粗短）
+  ctx.lineWidth = Math.max(3, r * 0.06);
+  const hourAngle = (-90 + 10 * 30) * Math.PI / 180;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(hourAngle) * r * 0.5, cy + Math.sin(hourAngle) * r * 0.5);
+  ctx.stroke();
+
+  // 分针（2点方向，中长）
+  ctx.lineWidth = Math.max(2, r * 0.045);
+  const minAngle = (-90 + 2 * 30) * Math.PI / 180;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(minAngle) * r * 0.7, cy + Math.sin(minAngle) * r * 0.7);
+  ctx.stroke();
+
+  // 秒针（6点方向，细长）
+  ctx.lineWidth = Math.max(1.5, r * 0.025);
+  const secAngle = (-90 + 6 * 30) * Math.PI / 180;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(secAngle) * r * 0.82, cy + Math.sin(secAngle) * r * 0.82);
+  ctx.stroke();
+
+  // 中心圆点
+  ctx.fillStyle = '#333333';
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(3, r * 0.05), 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/**
+ * 手撕纸条：暖色背景 + 四周手撕不规则边缘 + 底部手绘下划线
+ */
+function drawTornPaper(ctx: CanvasRenderingContext2D, el: ShapeElement, dpi: number): void {
+  const x = mmToPx(el.x, dpi);
+  const y = mmToPx(el.y, dpi);
+  const w = mmToPx(el.width, dpi);
+  const h = mmToPx(el.height, dpi);
+  const tear = Math.max(2, h * 0.04); // 手撕边缘振幅
+
+  ctx.save();
+  ctx.globalAlpha = el.opacity ?? 1;
+
+  // 构建手撕边缘路径（用正弦波叠加模拟不规则撕纸效果）
+  ctx.beginPath();
+  const steps = 40;
+  // 上边（从左到右）
+  ctx.moveTo(x, y + tear * 0.5);
+  for (let i = 0; i <= steps; i++) {
+    const px = x + (w * i / steps);
+    const py = y + tear * 0.5 + Math.sin(i * 0.8) * tear * 0.4 + Math.sin(i * 2.1) * tear * 0.2;
+    ctx.lineTo(px, py);
+  }
+  // 右边（从上到下）
+  for (let i = 0; i <= steps; i++) {
+    const px = x + w - tear * 0.3 + Math.sin(i * 1.2) * tear * 0.3 + Math.sin(i * 2.5) * tear * 0.15;
+    const py = y + (h * i / steps);
+    ctx.lineTo(px, py);
+  }
+  // 下边（从右到左）
+  for (let i = steps; i >= 0; i--) {
+    const px = x + (w * i / steps);
+    const py = y + h - tear * 0.4 + Math.sin(i * 0.9 + 1) * tear * 0.35 + Math.sin(i * 1.8) * tear * 0.2;
+    ctx.lineTo(px, py);
+  }
+  // 左边（从下到上）
+  for (let i = steps; i >= 0; i--) {
+    const px = x + tear * 0.3 + Math.sin(i * 1.1 + 2) * tear * 0.3 + Math.sin(i * 2.3) * tear * 0.15;
+    const py = y + (h * i / steps);
+    ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+
+  // 填充暖色背景（用元素背景色，默认暖米色）
+  ctx.fillStyle = el.backgroundColor && el.backgroundColor !== 'transparent' ? el.backgroundColor : '#f5f0e8';
+  ctx.fill();
+
+  // 底部手绘下划线（深色，略微弯曲，有手绘感）
+  const lineY = y + h * 0.78;
+  ctx.strokeStyle = '#4a3f35';
+  ctx.lineWidth = Math.max(1.5, h * 0.025);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.08, lineY);
+  // 用二次贝塞尔曲线模拟手绘弯曲
+  ctx.quadraticCurveTo(x + w * 0.4, lineY - h * 0.02, x + w * 0.7, lineY + h * 0.01);
+  ctx.quadraticCurveTo(x + w * 0.85, lineY + h * 0.02, x + w * 0.92, lineY - h * 0.005);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function drawShapeElement(ctx: CanvasRenderingContext2D, el: ShapeElement, dpi: number) {
+  // 手绘时钟样式
+  if (el.clockStyle) {
+    drawClock(ctx, el, dpi);
+    return;
+  }
+  // 手撕纸条样式
+  if (el.tornPaper) {
+    drawTornPaper(ctx, el, dpi);
+    return;
+  }
+
   const x = mmToPx(el.x, dpi);
   const y = mmToPx(el.y, dpi);
   const w = mmToPx(el.width, dpi);

@@ -41,6 +41,8 @@ export interface TemplateElement {
   body?: boolean;
   /** 短正文标记：空间小的正文区域，从主题短正文库取一行短句，不用长正文 */
   shortBody?: boolean;
+  /** 一句话标语标记：极短文案（4-10字），从主题 taglines 取，用于极小区域 */
+  tagline?: boolean;
   /** 文字元素的默认字号（相对页面宽度的比例）；正文标记的元素只是备用基准 */
   fontSizeRatio?: number;
   /** 文字对齐 */
@@ -315,8 +317,8 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'image', x: 0.362, y: 0.321, width: 0.284, height: 0.429, cropHint: 'cover' },
       // 右上方第三张
       { type: 'image', x: 0.666, y: 0.183, width: 0.284, height: 0.429, cropHint: 'cover' },
-      // 右下角一行文案（从文案库映射，右对齐）
-      { type: 'text', x: 0.5358, y: 0.8457, width: 0.3655, height: 0.041, placeholder: '在这里写下一句感悟...', body: true, shortBody: true, fontSizeRatio: 0.0191, textAlign: 'right', fontWeight: 'normal', color: '#333333' },
+      // 右下角一行短句文案（正常正文，从短正文库取，右对齐）
+      { type: 'text', x: 0.5358, y: 0.8457, width: 0.3655, height: 0.041, placeholder: '在这里写一句话', body: true, shortBody: true, fontSizeRatio: 0.0191, textAlign: 'right', fontWeight: 'normal', color: '#333333' },
     ],
   },
   {
@@ -348,7 +350,7 @@ export const TEMPLATES: TemplateDefinition[] = [
     thumbnail: 'three-top-two-bottom-wide',
     elements: [
       // 标题（右对齐）
-      { type: 'text', x: 0.4614, y: 0.1656, width: 0.38, height: 0.05, placeholder: '在这里写标题', fontSizeRatio: 0.045, textAlign: 'right', fontWeight: 'bold', color: '#2c2c2c' },
+      { type: 'text', x: 0.4676, y: 0.7871, width: 0.3797, height: 0.05, placeholder: '在这里写标题', fontSizeRatio: 0.0548, textAlign: 'right', fontWeight: 'bold', color: '#2c2c2c' },
       // 左上小图
       { type: 'image', x: 0.1507, y: 0.2295, width: 0.3412, height: 0.2463, cropHint: 'cover' },
       // 右上小图
@@ -700,14 +702,23 @@ export function applyTemplate(
       // 固定文字（比如装饰小标签）保持原样，不填充文案
       if ((tplEl as any).fixed) {
         content = tplEl.placeholder || '';
+      } else if ((tplEl as any).tagline === true) {
+        // 一句话标语：从主题 taglines 取4-10字的极短标语
+        if (theme && theme.taglines && theme.taglines.length > 0) {
+          content = theme.taglines[Math.floor(Math.random() * theme.taglines.length)];
+        } else {
+          content = tplEl.placeholder || '';
+        }
       } else if (isBody) {
         // 正文：主题文案库优先；标记 shortBody 的用主题短正文（一行短句），普通正文用主题长正文
         const isShortBody = (tplEl as any).shortBody === true;
-        if (theme) {
-          if (isShortBody) {
-            // 短正文：从主题短正文库取（一行短句）
-            content = randomPick(theme.shortParagraphs || theme.paragraphs);
-          } else if (themePickedBodies.length > 1) {
+        if (isShortBody) {
+          // 短正文：总是从主题短正文库取（旅行/日常主题也有 shortParagraphs）
+          const themeForShort = getThemeById(themeId);
+          const shorts = themeForShort?.shortParagraphs || [];
+          content = shorts.length > 0 ? randomPick(shorts) : (tplEl.placeholder || '');
+        } else if (theme) {
+          if (themePickedBodies.length > 1) {
             // 长正文：多正文位置按顺序取预选的3条
             content = themePickedBodies[bodyPickIndex] || '';
             bodyPickIndex++;
@@ -771,6 +782,7 @@ export function applyTemplate(
         // 小空间里的短句会被长正文顶掉、撑出文字框。
         body: isBody,
         shortBody: tplEl.shortBody === true,
+        tagline: tplEl.tagline === true,
         title,
       });
     }
