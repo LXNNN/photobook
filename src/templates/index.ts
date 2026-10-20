@@ -305,8 +305,6 @@ export const TEMPLATES: TemplateDefinition[] = [
     description: '三张竖版照片从左下到右上阶梯错落排列，左上角配标题和短句文案',
     thumbnail: 'three-stairs',
     elements: [
-      // 底部普通选区（米白背景块，最底层）
-      { type: 'shape', x: 0, y: 0.6995, width: 0.998, height: 0.3, backgroundColor: '#f5f0e8' },
       // 标题
       { type: 'text', x: 0.093, y: 0.139, width: 0.5, height: 0.06, placeholder: '时光印记', fontSizeRatio: 0.05, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c' },
       // 文案（两行短句）
@@ -317,6 +315,8 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'image', x: 0.362, y: 0.321, width: 0.284, height: 0.429, cropHint: 'cover' },
       // 右上方第三张
       { type: 'image', x: 0.666, y: 0.183, width: 0.284, height: 0.429, cropHint: 'cover' },
+      // 右下角装饰英文（固定内容，不填充文案，右对齐）
+      { type: 'text', x: 0.5358, y: 0.8457, width: 0.3655, height: 0.041, placeholder: 'Collecting moments, one frame at a time.', fixed: true, fontSizeRatio: 0.0191, textAlign: 'right', fontWeight: 'normal', color: '#333333' },
     ],
   },
   {

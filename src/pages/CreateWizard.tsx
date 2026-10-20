@@ -12,6 +12,10 @@ import { generateId } from '@/utils/units';
 import { ensureFolderReady, ensureAlbumFolder, persistProject } from '@/utils/folderLibrary';
 import { PRESET_FORMATS, ALBUM_STYLES } from '@/types';
 import type { ImageAsset, AlbumStyleId } from '@/types';
+import classic1 from '@/assets/经典1.jpg';
+import classic2 from '@/assets/经典2.jpg';
+import atmosphere1 from '@/assets/氛围感1.jpg';
+import atmosphere2 from '@/assets/氛围感2.jpg';
 
 // 启动守卫在 StrictMode 下会跑两遍，提示只弹一次
 let folderGuardAlerted = false;
@@ -403,14 +407,29 @@ export default function CreateWizard() {
                   >
                     <div className="text-sm font-medium text-gray-800">{style.name}</div>
                     <div className="text-xs text-gray-400 mt-1">
-                      {style.id === 'classic' ? '现有模板与智能排版规则' : '新模板制作中，敬请期待'}
+                      {style.id === 'classic' ? '图片+文字排版，把你的相册变成一本书' : '新模板制作中，敬请期待'}
+                    </div>
+                    <div className="flex gap-2 mt-3">
+                      <img
+                        src={style.id === 'classic' ? classic1 : atmosphere1}
+                        alt={`${style.name}示例1`}
+                        className="object-cover border border-[#999] rounded-none"
+                        style={{ width: '146px', height: '100px' }}
+                      />
+                      <img
+                        src={style.id === 'classic' ? classic2 : atmosphere2}
+                        alt={`${style.name}示例2`}
+                        className="object-cover border border-[#999] rounded-none"
+                        style={{ width: '146px', height: '100px' }}
+                      />
                     </div>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* 主题选择 */}
+            {/* 主题选择（临时隐藏，默认用旅行主题，以后开放把 false 改成 selectedStyle === 'classic'） */}
+            {false && (
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-3">选择文案主题</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -418,15 +437,17 @@ export default function CreateWizard() {
                   <button
                     key={theme.id}
                     onClick={() => setSelectedTheme(theme.id)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
                       selectedTheme === theme.id
                         ? 'border-amber-500 bg-amber-50 shadow-md'
                         : 'border-gray-200 hover:border-gray-300 bg-white'
                     }`}
                   >
-                    <div className="text-2xl mb-2">{theme.icon}</div>
-                    <div className="text-sm font-medium text-gray-800">{theme.name}</div>
-                    <div className="text-xs text-gray-400 mt-1 line-clamp-2">{theme.description}</div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="text-lg flex-shrink-0">{theme.icon}</div>
+                      <div className="text-sm font-medium text-gray-800 truncate">{theme.name}</div>
+                    </div>
+                    <div className="text-xs text-gray-400 line-clamp-1">{theme.description}</div>
                   </button>
                 ))}
               </div>
@@ -434,6 +455,7 @@ export default function CreateWizard() {
                 主题仅影响文案内容，不改变排版布局
               </p>
             </div>
+            )}
 
             {/* 高级选项 */}
             <div className="mb-8 p-4 bg-gray-50 rounded-lg">
