@@ -30,8 +30,10 @@ export default function TemplatePanel({ format, onApplied }: Props) {
   // 模板库是模块级的可变数组，订阅版本号才能在新增/删除后重新渲染
   useSyncExternalStore(subscribeTemplates, getTemplatesVersion);
   // 按相册风格过滤：classic 显示现有这套模板（没标 styleId 的就是），
-  // atmosphere 显示新模板（还没做，先空位）
-  const styleId = project?.styleId ?? 'classic';
+  // atmosphere 显示新模板；当前风格没有模板时自动回退到 classic
+  const projectStyleId = project?.styleId ?? 'classic';
+  const hasStyleTemplates = TEMPLATES.some(t => (t.styleId ?? 'classic') === projectStyleId);
+  const styleId = hasStyleTemplates ? projectStyleId : 'classic';
   const inStyle = (t: { styleId?: string }) => (t.styleId ?? 'classic') === styleId;
   const categories = getTemplateCategories().filter((c) =>
     getTemplatesByCategory(c).some(inStyle)
