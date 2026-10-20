@@ -34,10 +34,13 @@ export function drawPageContent(
     ctx.fillRect(0, 0, w, h);
   }
 
+  // 胶卷孔填这个色（图片背景没有颜色可填，退白）；不能挖透明——JPEG 导出会变黑孔
+  const pageBgColor = page.background.type === 'color' ? page.background.value : '#ffffff';
+
   // 按 zIndex 排序后绘制元素
   const elements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
   for (const el of elements) {
-    drawElement(ctx, el, dpi, assets);
+    drawElement(ctx, el, dpi, assets, pageBgColor);
   }
 }
 
@@ -85,7 +88,8 @@ function drawElement(
   ctx: CanvasRenderingContext2D,
   el: Element,
   dpi: number,
-  assets: Map<string, HTMLImageElement>
+  assets: Map<string, HTMLImageElement>,
+  pageBgColor: string
 ) {
   ctx.save();
   ctx.globalAlpha = el.opacity ?? 1;
@@ -98,7 +102,7 @@ function drawElement(
   ctx.translate(-cx, -cy);
 
   if (el.type === 'image') {
-    drawImageElement(ctx, el, dpi, assets);
+    drawImageElement(ctx, el, dpi, assets, pageBgColor);
   } else if (el.type === 'text') {
     drawTextElement(ctx, el, dpi);
   } else if (el.type === 'sticker') {
@@ -110,32 +114,244 @@ function drawElement(
   ctx.restore();
 }
 
+/** 胶卷选区：上下黑边各占元素高度的比例 */
+const FILM_STRIP_RATIO = 0.12;
+/** 卡片选区：左右留白占宽度的比例 */
+const CARD_MARGIN_X = 0.04;
+/** 卡片选区：上留白占高度的比例 */
+const CARD_MARGIN_TOP = 0.03;
+/** 卡片选区：下留白（照片底边到波浪基线）占宽度的比例（参考图下边留得最大） */
+const CARD_MARGIN_BOTTOM = 0.16;
+/** 卡片选区：波浪振幅占宽度的比例 */
+const CARD_WAVE_AMP = 0.02;
+
+/**
+ * 图片元素里照片实际占的区域（相对元素左上角，mm）。
+ * 邮票照片顶到齿孔=整个元素；胶卷只占中间带；卡片四周留白。
+ * 渲染（drawImageElement）和裁剪弹窗（ImageCropper 取景框）共用这一份。
+ */
+export function elementPhotoArea(el: ImageElement): { x: number; y: number; width: number; height: number } {
+  if (el.filmEdge) {
+    const strip = el.height * FILM_STRIP_RATIO;
+    return { x: 0, y: strip, width: el.width, height: el.height - strip * 2 };
+  }
+  if (el.cardEdge) {
+    const marginX = el.width * CARD_MARGIN_X;
+    const top = el.height * CARD_MARGIN_TOP;
+    const bottom = el.width * CARD_MARGIN_BOTTOM + el.width * CARD_WAVE_AMP;
+    return { x: marginX, y: top, width: el.width - marginX * 2, height: el.height - top - bottom };
+  }
+  return { x: 0, y: 0, width: el.width, height: el.height };
+}
+
 /** 绘制图片元素 */
 function drawImageElement(
   ctx: CanvasRenderingContext2D,
   el: ImageElement,
   dpi: number,
-  assets: Map<string, HTMLImageElement>
+  assets: Map<string, HTMLImageElement>,
+  pageBgColor: string
 ) {
   const x = mmToPx(el.x, dpi);
   const y = mmToPx(el.y, dpi);
   const w = mmToPx(el.width, dpi);
   const h = mmToPx(el.height, dpi);
 
+  // 卡片选区：白卡片（带投影）+ 底部贝壳波浪，照片在四周留白里
+  if (el.cardEdge) {
+    drawCard(ctx, x, y, w, h);
+  } else if (el.filmEdge) {
+    // 胶卷选区：上下黑边 + 白孔
+    drawFilmStrips(ctx, x, y, w, h, h * FILM_STRIP_RATIO, pageBgColor);
+  }
+
+  // 照片画在照片区（邮票 = 整个元素；胶卷/卡片 = 各自的照片区）
+  const area = elementPhotoArea(el);
+  const photoX = x + mmToPx(area.x, dpi);
+  const photoY = y + mmToPx(area.y, dpi);
+  const photoW = mmToPx(area.width, dpi);
+  const photoH = mmToPx(area.height, dpi);
+
+  // 邮票照片选区：四边齿孔往里凹，照片直接顶到齿孔
+  // 圆形选区：正圆（内切于元素，直径 = 短边），照片裁进圆里
+  ctx.save();
+  if (el.stampEdge) {
+    buildStampPath(ctx, x, y, w, h);
+    ctx.clip();
+  } else if (el.circleEdge) {
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2);
+    ctx.clip();
+  }
+
   const img = assets.get(el.imageId);
   if (img) {
     // cover 模式裁剪：保持比例，居中裁剪，不变形
-    const crop = computeCoverCrop(img.width, img.height, w, h, el.crop);
-    ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, x, y, w, h);
+    const crop = computeCoverCrop(img.width, img.height, photoW, photoH, el.crop);
+    ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, photoX, photoY, photoW, photoH);
   } else {
-    // 占位
+    // 占位（画在照片区里）
     ctx.fillStyle = '#e8e8e8';
-    ctx.fillRect(x, y, w, h);
+    ctx.fillRect(photoX, photoY, photoW, photoH);
     ctx.fillStyle = '#999';
     ctx.font = '14px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('图片加载中...', x + w / 2, y + h / 2);
+    ctx.fillText('图片加载中...', photoX + photoW / 2, photoY + photoH / 2);
   }
+
+  ctx.restore();
+}
+
+/**
+ * 卡片选区：白卡片 + 底部贝壳波浪（浅弧，参考图：周期 ≈ 宽 0.176、振幅 ≈ 宽 0.02）
+ * + 柔光投影（canvas shadow，跟着波浪走，不需要手工画阴影）。
+ */
+function drawCard(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+  const amp = w * CARD_WAVE_AMP;
+  // 波浪密度：周期 = 宽 0.088（参考图 0.176 的两倍密度，她说要更密集）
+  const n = Math.max(2, Math.round(w / (w * 0.088)));
+  const period = w / n;
+  const cuspY = y + h - amp;
+
+  ctx.save();
+  // 柔光投影：比参考图收一点，offset 向下一点显得立体
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.28)';
+  ctx.shadowBlur = w * 0.06;
+  ctx.shadowOffsetX = w * 0.01;
+  ctx.shadowOffsetY = w * 0.03;
+  ctx.fillStyle = '#ffffff';
+
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + w, y);
+  ctx.lineTo(x + w, cuspY);
+  // 下边波浪：从右下往左下，每个贝壳一个 quadratic（控制点深度 2A → 顶点深度 A）
+  for (let i = n - 1; i >= 0; i--) {
+    const cx = x + (i + 0.5) * period;
+    const rightCusp = x + (i + 1) * period;
+    ctx.lineTo(rightCusp, cuspY);
+    ctx.quadraticCurveTo(cx, cuspY + amp * 2, rightCusp - period, cuspY);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * 胶卷上下黑边 + 白孔。孔的比例取自参考图（孔宽 = 孔高 × 1.43、孔距 = 孔宽 × 1.7、
+ * 角留白 = 孔宽 × 1.07）。孔填页面背景色而不是挖透明——预览页/图片导出把页面
+ * 压成 JPEG，透明孔会变成黑孔（JPEG 没有透明通道）。
+ */
+function drawFilmStrips(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  strip: number,
+  pageBgColor: string
+): void {
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(x, y, w, strip);
+  ctx.fillRect(x, y + h - strip, w, strip);
+
+  const holeH = strip * 0.55;
+  const holeW = holeH * 1.43;
+  const period = holeW * 1.7;
+  const margin = holeW * 1.07;
+  const radius = holeH * 0.2;
+  const count = Math.max(2, Math.round((w - 2 * margin) / period) + 1);
+  const actualPeriod = (w - 2 * margin) / (count - 1);
+
+  ctx.fillStyle = pageBgColor;
+  for (let i = 0; i < count; i++) {
+    const cx = x + margin + i * actualPeriod;
+    for (const cy of [y + strip / 2, y + h - strip / 2]) {
+      roundRectPath(ctx, cx - holeW / 2, cy - holeH / 2, holeW, holeH, radius);
+      ctx.fill();
+    }
+  }
+}
+
+/** 圆角矩形路径 */
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number
+): void {
+  const r = Math.min(radius, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+/**
+ * 四边半圆齿孔的邮票路径：齿孔往内凹，齿孔之间留平直边，四个角也留平直边
+ * （角上的横边留白 : 竖边留白 = 1 : 2，参考图里竖边确实比横边留得多）。
+ * 尺寸按元素短边比例算，缩放时自动跟着变。
+ */
+function buildStampPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): void {
+  const minSide = Math.min(w, h);
+  const holeR = minSide * 0.026;   // 齿孔半径（参考图 25px / 950px）
+  const refSpacing = minSide * 0.082; // 齿孔中心距参考值（参考图 78px / 950px）
+  const cornerH = minSide * 0.025; // 横边角的平直留白（参考图 24px / 950px）
+  const cornerV = cornerH * 2;     // 竖边角的平直留白 = 横边 2 倍（横竖 1:2）
+  // 每条边去掉两角留白后，按参考间距排齿孔；齿孔再均匀铺满两角之间
+  const nx = Math.max(2, Math.round((w - 2 * (cornerH + holeR)) / refSpacing + 1)); // 上下边
+  const ny = Math.max(2, Math.round((h - 2 * (cornerV + holeR)) / refSpacing + 1)); // 左右边
+  const dx = (w - 2 * (cornerH + holeR)) / (nx - 1);
+  const dy = (h - 2 * (cornerV + holeR)) / (ny - 1);
+
+  ctx.beginPath();
+  // 四边齿孔都用 ccw=true（角度递减）：弧的起终点必须顺着路径的行进方向，
+  // 齿孔才被 nonzero 填充规则算在图形外面。起终点反了的话，齿孔区域会被填实。
+  // 路径必须从角落点开始——不然 closePath 会从最后一个齿孔斜着连回起点，切掉角落。
+  ctx.moveTo(x, y);
+  // 上边：从左到右，齿孔往下凹
+  for (let i = 0; i < nx; i++) {
+    const cx = x + cornerH + holeR + i * dx;
+    ctx.lineTo(cx - holeR, y);
+    ctx.arc(cx, y, holeR, Math.PI, 0, true);
+  }
+  ctx.lineTo(x + w, y);
+  // 右边：从上到下，齿孔往左凹
+  for (let i = 0; i < ny; i++) {
+    const cy = y + cornerV + holeR + i * dy;
+    ctx.lineTo(x + w, cy - holeR);
+    ctx.arc(x + w, cy, holeR, -Math.PI / 2, Math.PI / 2, true);
+  }
+  ctx.lineTo(x + w, y + h);
+  // 下边：从右到左，齿孔往上凹
+  for (let i = 0; i < nx; i++) {
+    const cx = x + w - cornerH - holeR - i * dx;
+    ctx.lineTo(cx + holeR, y + h);
+    ctx.arc(cx, y + h, holeR, 0, Math.PI, true);
+  }
+  ctx.lineTo(x, y + h);
+  // 左边：从下到上，齿孔往右凹
+  for (let i = 0; i < ny; i++) {
+    const cy = y + h - cornerV - holeR - i * dy;
+    ctx.lineTo(x, cy + holeR);
+    ctx.arc(x, cy, holeR, Math.PI / 2, -Math.PI / 2, true);
+  }
+  ctx.closePath();
 }
 
 /** 绘制形状/选区元素 */

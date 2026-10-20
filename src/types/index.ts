@@ -15,6 +15,8 @@ export interface Project {
   bodyFontSize?: number;
   /** 正文颜色（「🎨 正文样式」改过之后记下来），默认 #333333（DEFAULT_BODY_COLOR） */
   bodyColor?: string;
+  /** 相册风格：经典图文排版 / 氛围感设计。不填 = classic（老相册） */
+  styleId?: AlbumStyleId;
 }
 
 export interface BookFormat {
@@ -29,6 +31,19 @@ export const PRESET_FORMATS: Record<string, BookFormat> = {
   A4: { width: 210, height: 297, bleed: 3, safeMargin: 5 },
   SQUARE_20: { width: 200, height: 200, bleed: 3, safeMargin: 5 },
 };
+
+/**
+ * 相册风格（2026-10-20 加）：
+ * - classic 经典图文排版：现有模板 + 智能生成算法，模板不标 styleId 的就是它
+ * - atmosphere 氛围感设计：另一套模板（还没做，先空位）；编辑器左侧模板面板、
+ *   右侧添加选区、智能生成都按它过滤
+ */
+export type AlbumStyleId = 'classic' | 'atmosphere';
+
+export const ALBUM_STYLES: ReadonlyArray<{ id: AlbumStyleId; name: string }> = [
+  { id: 'classic', name: '经典图文排版' },
+  { id: 'atmosphere', name: '氛围感设计' },
+];
 
 export interface Page {
   id: string;
@@ -63,6 +78,27 @@ export interface ImageElement extends BaseElement {
   imageId: string;
   crop: CropArea;
   filter?: FilterSettings;
+  /**
+   * 邮票照片选区：四边打半圆齿孔（照片直接顶到齿孔，无白边）。
+   * 「页面属性 → 添加选区 → 邮票照片选区」按钮创建；绘制见 drawPageContent 的 buildStampPath。
+   */
+  stampEdge?: boolean;
+  /**
+   * 胶卷选区：上下黑边（各占元素高度 FILM_STRIP_RATIO）+ 黑边里的圆角孔（填页面背景色），
+   * 照片只占中间带。「页面属性 → 添加选区 → 胶卷选区」按钮创建；
+   * 绘制见 drawPageContent 的 drawFilmStrips。孔不能挖透明——预览/导出是 JPEG，透明会变黑孔。
+   */
+  filmEdge?: boolean;
+  /**
+   * 卡片选区：白卡片 + 四周留白（下边最大）+ 底部浅弧贝壳边 + 柔光投影。
+   * 「页面属性 → 添加选区 → 卡片选区」按钮创建；几何常量（边距/波浪/投影）见 drawPageContent。
+   */
+  cardEdge?: boolean;
+  /**
+   * 圆形选区：照片裁成正圆（内切于元素，直径 = 短边）。
+   * 「页面属性 → 添加选区 → 圆形选区」按钮创建；绘制见 drawImageElement 的 clip 分支。
+   */
+  circleEdge?: boolean;
 }
 
 /**

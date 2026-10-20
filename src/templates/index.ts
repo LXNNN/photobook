@@ -1,4 +1,4 @@
-import type { Element, BookFormat, Page, ImageElement, TextElement, FontWeight, CropArea } from '@/types';
+import type { Element, BookFormat, Page, ImageElement, TextElement, FontWeight, CropArea, AlbumStyleId } from '@/types';
 import { generateId } from '@/utils/units';
 import { getRandomText, randomPick } from './copywriting';
 import { getTemplateCopyList } from './templateCopy';
@@ -18,6 +18,8 @@ export interface TemplateDefinition {
   thumbnail: string;
   /** 模板元素定义（相对坐标） */
   elements: TemplateElement[];
+  /** 相册风格：不填 = classic（经典图文排版）。氛围感设计的模板标 'atmosphere' */
+  styleId?: AlbumStyleId;
 }
 
 export interface TemplateElement {
@@ -1006,7 +1008,8 @@ export function matchTemplateForPage(
 export function createTemplateFromPage(
   page: Page,
   format: BookFormat,
-  name: string
+  name: string,
+  styleId: AlbumStyleId = 'classic'
 ): TemplateDefinition {
   return {
     id: `custom-${generateId()}`,
@@ -1015,6 +1018,7 @@ export function createTemplateFromPage(
     description: '由页面样式保存的自定义模板',
     thumbnail: '',
     elements: pageElementsToTemplateElements(page.elements, format),
+    styleId,
   };
 }
 

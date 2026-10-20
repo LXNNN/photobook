@@ -200,7 +200,7 @@ function TemplateActions({ page, pageIndex, onDone }: { page: Page; pageIndex: n
     }
 
     setCreateState('creating');
-    const tpl = createTemplateFromPage(page, project.format, name);
+    const tpl = createTemplateFromPage(page, project.format, name, project.styleId ?? 'classic');
     await persistTemplate(tpl);
     // 当前页改挂到新模板上
     dispatch(setPageTemplateId({ pageIndex, templateId: tpl.id }));
@@ -264,6 +264,8 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
   const dispatch = useAppDispatch();
   const project = useAppSelector((s) => s.project.current);
   const format = project?.format;
+  // 相册风格：经典图文只给基础功能，氛围感给全套花式选区
+  const styleId = project?.styleId ?? 'classic';
 
   // 添加照片选区（空图片占位符）
   const handleAddImageSlot = () => {
@@ -281,6 +283,101 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
       zIndex: maxZ + 1,
       imageId: '',
       crop: { x: 0, y: 0, width: 1, height: 1 },
+    };
+    dispatch(addElement({ pageIndex, element: newElement }));
+    dispatch(selectElement(newElement.id));
+  };
+
+  // 添加邮票照片选区：竖版 1:1.25、四边齿孔（照片直接顶到齿孔）
+  const handleAddStampSlot = () => {
+    if (!format) return;
+    const maxZ = page.elements.length > 0 ? Math.max(...page.elements.map((e) => e.zIndex)) : -1;
+    const stampW = Math.min(format.width, format.height) * 0.55;
+    const stampH = stampW * 1.25;
+    const newElement: ImageElement = {
+      id: generateId(),
+      type: 'image',
+      x: (format.width - stampW) / 2,
+      y: (format.height - stampH) / 2,
+      width: stampW,
+      height: stampH,
+      rotation: 0,
+      opacity: 1,
+      zIndex: maxZ + 1,
+      imageId: '',
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+      stampEdge: true,
+    };
+    dispatch(addElement({ pageIndex, element: newElement }));
+    dispatch(selectElement(newElement.id));
+  };
+
+  // 添加胶卷选区：横版 1.25:1、上下黑边白孔、中间照片带
+  const handleAddFilmSlot = () => {
+    if (!format) return;
+    const maxZ = page.elements.length > 0 ? Math.max(...page.elements.map((e) => e.zIndex)) : -1;
+    const filmW = Math.min(format.width, format.height) * 0.7;
+    const filmH = filmW / 1.25;
+    const newElement: ImageElement = {
+      id: generateId(),
+      type: 'image',
+      x: (format.width - filmW) / 2,
+      y: (format.height - filmH) / 2,
+      width: filmW,
+      height: filmH,
+      rotation: 0,
+      opacity: 1,
+      zIndex: maxZ + 1,
+      imageId: '',
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+      filmEdge: true,
+    };
+    dispatch(addElement({ pageIndex, element: newElement }));
+    dispatch(selectElement(newElement.id));
+  };
+
+  // 添加卡片选区：横版 ~1.33:1（跟参考图一致）、白卡片 + 波浪底边 + 投影
+  const handleAddCardSlot = () => {
+    if (!format) return;
+    const maxZ = page.elements.length > 0 ? Math.max(...page.elements.map((e) => e.zIndex)) : -1;
+    const cardW = Math.min(format.width, format.height) * 0.68;
+    const cardH = cardW / 1.33;
+    const newElement: ImageElement = {
+      id: generateId(),
+      type: 'image',
+      x: (format.width - cardW) / 2,
+      y: (format.height - cardH) / 2,
+      width: cardW,
+      height: cardH,
+      rotation: 0,
+      opacity: 1,
+      zIndex: maxZ + 1,
+      imageId: '',
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+      cardEdge: true,
+    };
+    dispatch(addElement({ pageIndex, element: newElement }));
+    dispatch(selectElement(newElement.id));
+  };
+
+  // 添加圆形选区：正方形元素、照片裁成正圆
+  const handleAddCircleSlot = () => {
+    if (!format) return;
+    const maxZ = page.elements.length > 0 ? Math.max(...page.elements.map((e) => e.zIndex)) : -1;
+    const size = Math.min(format.width, format.height) * 0.55;
+    const newElement: ImageElement = {
+      id: generateId(),
+      type: 'image',
+      x: (format.width - size) / 2,
+      y: (format.height - size) / 2,
+      width: size,
+      height: size,
+      rotation: 0,
+      opacity: 1,
+      zIndex: maxZ + 1,
+      imageId: '',
+      crop: { x: 0, y: 0, width: 1, height: 1 },
+      circleEdge: true,
     };
     dispatch(addElement({ pageIndex, element: newElement }));
     dispatch(selectElement(newElement.id));
@@ -312,24 +409,45 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
       <h3 className="text-sm font-medium text-gray-700 mb-4">页面属性</h3>
 
       <div className="space-y-4">
-        {/* 添加选区功能（照片选区/普通选区） */}
-        <div className="pb-4 border-b border-gray-100">
-          <label className="block text-xs text-gray-500 mb-2">添加选区</label>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={handleAddImageSlot}
-              className="py-2 px-3 text-xs rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors font-medium"
-            >
-              🖼️ 照片选区
-            </button>
-            <button
-              onClick={handleAddShapeSlot}
-              className="py-2 px-3 text-xs rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors font-medium"
-            >
-              ⬜ 普通选区
-            </button>
+        {/* 添加选区：整个区块只在「氛围感设计」里显示，经典图文先不显示。
+            普通选区按钮也先藏着（handleAddShapeSlot 保留，以后开放再加回按钮） */}
+        {styleId === 'atmosphere' && (
+          <div className="pb-4 border-b border-gray-100">
+            <label className="block text-xs text-gray-500 mb-2">添加选区</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleAddImageSlot}
+                className="py-2 px-3 text-xs rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors font-medium"
+              >
+                🖼️ 照片选区
+              </button>
+              <button
+                onClick={handleAddStampSlot}
+                className="py-2 px-3 text-xs rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors font-medium"
+              >
+                📮 邮票照片选区
+              </button>
+              <button
+                onClick={handleAddFilmSlot}
+                className="py-2 px-3 text-xs rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors font-medium"
+              >
+                🎞️ 胶卷选区
+              </button>
+              <button
+                onClick={handleAddCardSlot}
+                className="py-2 px-3 text-xs rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors font-medium"
+              >
+                🪪 卡片选区
+              </button>
+              <button
+                onClick={handleAddCircleSlot}
+                className="py-2 px-3 text-xs rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors font-medium"
+              >
+                ⭕ 圆形选区
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         <div>
           <label className="block text-xs text-gray-500 mb-1.5">背景颜色</label>

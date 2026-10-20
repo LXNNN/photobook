@@ -1,4 +1,4 @@
-import type { Project, Page, BookFormat, Element, TextElement } from '@/types';
+import type { Project, Page, BookFormat, Element, TextElement, AlbumStyleId } from '@/types';
 import { TEMPLATES, applyTemplate, type TemplateDefinition } from '@/templates';
 import { THEMES, randomPick, getThemeById, type Theme } from '@/templates/themes';
 import { generateId } from '@/utils/units';
@@ -47,6 +47,8 @@ export interface AutoLayoutOptions {
   includeCover: boolean;
   /** 是否生成结尾页 */
   includeEnding: boolean;
+  /** 相册风格（默认 classic）；atmosphere 的模板还没做，先拦下 */
+  styleId?: AlbumStyleId;
 }
 
 /** 已使用的文案记录，避免重复 */
@@ -693,7 +695,13 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
     bodyFontSize = DEFAULT_BODY_FONT_SIZE,
     includeCover,
     includeEnding,
+    styleId = 'classic',
   } = options;
+
+  // 氛围感设计的模板还没做：先明确拦下，别生成出挂着 atmosphere 标签的经典排版
+  if (styleId === 'atmosphere') {
+    throw new Error('氛围感设计的模板还在制作中，先选「经典图文排版」吧');
+  }
   const theme = getThemeById(themeId) || THEMES[0];
   const used: UsedTexts = {
     pageTitles: new Set(),
@@ -844,6 +852,7 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
     version: 1,
     themeId,
     bodyFontSize,
+    styleId,
   };
 }
 

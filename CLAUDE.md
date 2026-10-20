@@ -49,6 +49,14 @@ npm run preview   # 预览构建产物
 
 同文件的 `collectAssetIds(pages)` 收集全部图片/贴纸 id——绘制依赖它收得全不全，新增元素类型时两边都要记得。历史上 Viewer 自己抄过一份绘制逻辑，漏了旋转和 cover 裁剪，缩略图/预览全错。
 
+图片元素可带 `stampEdge: true`（「邮票照片选区」按钮创建）：`buildStampPath` 生成四边半圆齿孔（半径 = 短边×0.026、间距 ≈ 短边×0.082，齿孔之间留平直边；四角也留平直边，横边角留白 = 短边×0.025、竖边 = 2 倍即横竖 1:2），照片直接顶到齿孔，比例全部取自参考图。两个 canvas 坑：①**齿孔弧线必须 ccw=true（角度递减）且起终点顺着路径行进方向**——起终点反了，齿孔区域会被 nonzero 填充规则算在图形里面、照片填实整个矩形（症状是上下边有齿孔、左右边没有）；②**路径必须从角落点开始**——否则 closePath 会从最后一个齿孔斜着连回起点，把角落切掉。
+
+图片元素可带 `filmEdge: true`（「胶卷选区」按钮创建）：上下黑边（各 `FILM_STRIP_RATIO` = 元素高度 0.12）+ 黑边里圆角孔（孔高 = 黑边 0.55、孔宽 = 1.43 倍、孔距 = 1.7 倍、角留白 = 1.07 倍），照片只占中间带（`computeCoverCrop` 按带的高度算）。**孔必须填页面背景色（drawPageContent 把 `pageBgColor` 传给 drawImageElement）**，不能 destination-out 挖透明——预览页/图片导出把页面压 JPEG，透明孔会变黑孔。裁剪弹窗 ImageCropper 取景框按照片带的比例算（也认 FILM_STRIP_RATIO）。
+
+图片元素可带 `cardEdge: true`（「卡片选区」按钮创建）：白卡片 + 底部浅弧贝壳波浪（周期 = 宽 0.088——参考图 0.176 的两倍密度，她 2026-10-20 说更密集；振幅 = 宽 0.02，quadratic 曲线）+ canvas 柔光投影（shadowBlur 0.06×宽、offsetY 0.03×宽，投影自动跟着波浪走）。照片区 = 四周留白（左/右 = 宽 0.04、上 = 高 0.03、下最大 = 宽 0.16，参考图比例）。**照片区统一用 `elementPhotoArea(el)` 算**（渲染 drawImageElement 和裁剪弹窗 ImageCropper 共用，加新边框形态只改这一个函数 + 绘制分支）。
+
+图片元素可带 `circleEdge: true`（「圆形选区」按钮创建）：照片裁成正圆（内切于元素，直径 = 短边，`arc` + clip）。照片区 = 整个元素，elementPhotoArea 不用管它。
+
 **艺术字体是本地 @font-face**（`src/assets/fonts/`，声明在 `index.css`；OFL 授权文件同目录）：得意黑、龙藏体、Great Vibes、Playfair Display。canvas 不会等字体下载完——**每处 `drawPageContent` 之前都要 `await ensureFontsLoaded(pages)`**（`utils/fonts.ts`），否则系统字体会被画进缩略图/预览图/300dpi PDF，而且画上去不会自动重画。现有入口：Editor 主画布（先画一版、字体就绪后再画一版）、`PageCanvas`、书架封面、Viewer 预览、PDF 导出、图片导出。新增字体：woff2 放进 `src/assets/fonts/` → `index.css` 加 `@font-face` → 加进 `utils/fonts.ts` 的 `ART_FONT_OPTIONS`；字体只在使用时才下载，不用的字体不拖慢首屏。字体预览页在 `docs/字体预览/`（本地，不上传）。
 
 ### 状态管理（Redux）
@@ -71,6 +79,7 @@ npm run preview   # 预览构建产物
 
 ### 智能排版（src/utils/autoLayout.ts + utils/photoAnalysis.ts）
 
+- **相册风格（2026-10-20 加）**：`Project.styleId` / `TemplateDefinition.styleId`，'classic' 经典图文排版（不标 = classic）/ 'atmosphere' 氛围感设计（模板还没做）。设置页「选择相册风格」二选一；`autoGenerateAlbum` 对 atmosphere 直接抛错拦住（别生成出挂着 atmosphere 标签的经典排版）；编辑器左侧模板面板按项目风格过滤模板；右侧**「添加选区」整块只在 atmosphere 显示**（classic 整个不显示；普通选区按钮也先藏着、handler 保留，以后开放加回按钮即可）；「新建模板」用 `createTemplateFromPage` 把当前项目风格写进新模板
 - 创建页「✨ 开始生成」走 `autoGenerateAlbum({ photos })`。照片先转成 `AutoPhoto`（宽高 + `weight` 画面分量），`weight` 由 `photoAnalysis.analyzePhotoWeight` 读 200px 缩略图在本地算（对比度 / 边缘密度 / 饱和度），只活在内存、不落盘，照片不出电脑
 - **暂时不参与智能排版的模板**（只在模板面板手动选用，之后另有设计计划）：双图横板 `two-images-stack`、四图网格 `four-grid`、四图杂志风 `four-magazine`、五图拼贴 `five-collage`。名单统一在 `autoLayout.ts` 的 `AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS`，想启用某款从名单删掉即可
 - **九宫格**：照片 >45 张（46 张起）才启用、一本最多一次，固定放正文最后一对；另一页固定配满版图 `full-image-bordered`（不参与模板轮换，规划时用 `PlannedPageCount.forceFullImage` 标记）。若把 `nine-grid-avatar` 放回暂停名单，这条规则整个跳过

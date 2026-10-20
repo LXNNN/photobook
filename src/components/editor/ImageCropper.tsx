@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { ImageElement } from '@/types';
 import { fitCropToRatio } from '@/utils/image';
+import { elementPhotoArea } from '@/engine/drawPageContent';
 
 interface Props {
   element: ImageElement;
@@ -37,8 +38,11 @@ export default function ImageCropper({ element, imageUrl, onConfirm, onClose }: 
   const [photo, setPhoto] = useState<PhotoRect>({ x: 0, y: 0, w: 0, h: 0 });
   const dragStart = useRef<{ mx: number; my: number; px: number; py: number } | null>(null);
 
-  // 取景框：形状跟着元素走，尽量占满对话框（500×400 是这个弹窗一直以来的可用大小）
-  const elementRatio = element.width / element.height;
+  // 取景框：形状跟元素里「照片实际占的区域」走，尽量占满对话框
+  // （500×400 是这个弹窗一直以来的可用大小）。胶卷/卡片选区的照片不是整个元素
+  // （胶卷只有中间带、卡片四周留白），取景框按 elementPhotoArea 的比例来。
+  const photoArea = elementPhotoArea(element);
+  const elementRatio = photoArea.width / photoArea.height;
   const frameW = Math.min(500, 400 * elementRatio);
   const frameH = frameW / elementRatio;
 

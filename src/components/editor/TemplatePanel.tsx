@@ -29,7 +29,13 @@ export default function TemplatePanel({ format, onApplied }: Props) {
   const project = useAppSelector((s) => s.project.current);
   // 模板库是模块级的可变数组，订阅版本号才能在新增/删除后重新渲染
   useSyncExternalStore(subscribeTemplates, getTemplatesVersion);
-  const categories = getTemplateCategories();
+  // 按相册风格过滤：classic 显示现有这套模板（没标 styleId 的就是），
+  // atmosphere 显示新模板（还没做，先空位）
+  const styleId = project?.styleId ?? 'classic';
+  const inStyle = (t: { styleId?: string }) => (t.styleId ?? 'classic') === styleId;
+  const categories = getTemplateCategories().filter((c) =>
+    getTemplatesByCategory(c).some(inStyle)
+  );
 
   // 分类下拉：只做定位（滚动到对应分类），不过滤模板
   const [jumpCategory, setJumpCategory] = useState('');
@@ -130,7 +136,7 @@ export default function TemplatePanel({ format, onApplied }: Props) {
                 <span className="text-sm">🖼️</span>{category}
               </h4>
               <div className="grid grid-cols-2 gap-2">
-                {getTemplatesByCategory(category).map((template) => (
+                {getTemplatesByCategory(category).filter(inStyle).map((template) => (
                   // 用 div 而不是 button：删除按钮要嵌在里面，button 套 button 是非法 HTML
                   <div
                     key={template.id}

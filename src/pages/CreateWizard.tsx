@@ -10,8 +10,8 @@ import { createPreviewImage, fileToImageAsset, isImageFile, toDisplayableFile } 
 import { saveImageAsset } from '@/utils/assetStore';
 import { generateId } from '@/utils/units';
 import { ensureFolderReady, ensureAlbumFolder, persistProject } from '@/utils/folderLibrary';
-import { PRESET_FORMATS } from '@/types';
-import type { ImageAsset } from '@/types';
+import { PRESET_FORMATS, ALBUM_STYLES } from '@/types';
+import type { ImageAsset, AlbumStyleId } from '@/types';
 
 // 启动守卫在 StrictMode 下会跑两遍，提示只弹一次
 let folderGuardAlerted = false;
@@ -46,6 +46,7 @@ export default function CreateWizard() {
   const [projectName, setProjectName] = useState('');
   const [nameError, setNameError] = useState('');
   const [selectedTheme, setSelectedTheme] = useState(THEMES[0].id);
+  const [selectedStyle, setSelectedStyle] = useState<AlbumStyleId>('classic');
   const [includeCover, setIncludeCover] = useState(true);
   const [includeEnding, setIncludeEnding] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -180,6 +181,7 @@ export default function CreateWizard() {
         // 想改的话是生成之后在编辑页「🎨 正文样式」里改
         includeCover,
         includeEnding,
+        styleId: selectedStyle,
       });
 
       // 3. 已连接文件夹时，先把这本相册的文件夹建好
@@ -385,6 +387,29 @@ export default function CreateWizard() {
               )}
             </div>
 
+            {/* 相册风格 */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-3">选择相册风格</label>
+              <div className="grid grid-cols-2 gap-3">
+                {ALBUM_STYLES.map((style) => (
+                  <button
+                    key={style.id}
+                    onClick={() => setSelectedStyle(style.id)}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      selectedStyle === style.id
+                        ? 'border-amber-500 bg-amber-50 shadow-md'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <div className="text-sm font-medium text-gray-800">{style.name}</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {style.id === 'classic' ? '现有模板与智能排版规则' : '新模板制作中，敬请期待'}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* 主题选择 */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-3">选择文案主题</label>
@@ -445,7 +470,9 @@ export default function CreateWizard() {
               </button>
               <button
                 onClick={handleGenerate}
-                className="px-8 py-2.5 bg-amber-700 text-white rounded-lg hover:bg-amber-800 transition-colors font-medium"
+                disabled={selectedStyle === 'atmosphere'}
+                title={selectedStyle === 'atmosphere' ? '氛围感设计的模板还在制作中' : undefined}
+                className="px-8 py-2.5 bg-amber-700 text-white rounded-lg hover:bg-amber-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
               >
                 ✨ 开始生成
               </button>
