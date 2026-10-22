@@ -51,6 +51,18 @@ export interface Page {
   elements: Element[];
   /** 应用该页的模板 ID（用于"保存模板"功能回写） */
   templateId?: string;
+  /** 页面级手绘连线装饰（不是元素，不可选中拖拽，直接画在背景上） */
+  doodle?: PageDoodle;
+}
+
+/** 页面级手绘连线装饰 */
+export interface PageDoodle {
+  /** 路径点（相对于页面的比例坐标0-1） */
+  path: { x: number; y: number }[];
+  /** 连线颜色，默认#c8c4bc */
+  color?: string;
+  /** 连线宽度（mm），默认1 */
+  width?: number;
 }
 
 export interface PageBackground {
@@ -131,6 +143,14 @@ export interface ShapeElement extends BaseElement {
   clockStyle?: boolean;
   /** 手撕纸条样式：暖色背景+四周手撕边缘+底部手绘下划线 */
   tornPaper?: boolean;
+  /** 手绘连线样式：true时绘制doodlePath定义的手绘曲线，忽略背景色 */
+  doodleLine?: boolean;
+  /** 手绘连线路径点（相对于元素的比例坐标0-1），doodleLine为true时使用 */
+  doodlePath?: { x: number; y: number }[];
+  /** 手绘连线颜色，默认#e74c3c（红色） */
+  doodleColor?: string;
+  /** 手绘连线宽度（mm），默认1.5 */
+  doodleWidth?: number;
 }
 
 export interface CropArea {

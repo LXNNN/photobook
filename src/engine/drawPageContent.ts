@@ -37,6 +37,11 @@ export function drawPageContent(
   // 胶卷孔填这个色（图片背景没有颜色可填，退白）；不能挖透明——JPEG 导出会变黑孔
   const pageBgColor = page.background.type === 'color' ? page.background.value : '#ffffff';
 
+  // 页面级手绘连线装饰（不是元素，直接画在背景上，层级低于所有元素）
+  if (page.doodle && page.doodle.path && page.doodle.path.length >= 2) {
+    drawPageDoodle(ctx, page.doodle, format, dpi);
+  }
+
   // 按 zIndex 排序后绘制元素
   const elements = [...page.elements].sort((a, b) => a.zIndex - b.zIndex);
   for (const el of elements) {
@@ -505,6 +510,132 @@ function drawTornPaper(ctx: CanvasRenderingContext2D, el: ShapeElement, dpi: num
   ctx.restore();
 }
 
+/**
+ * 页面级手绘连线：自然手绘风格
+ * - 3次描边，每次有轻微偏移，模拟"多描几下"
+ * - 每段线条粗细不均匀（0.5-1.5倍变化）
+ * - 路径点带伪随机抖动
+ */
+function drawPageDoodle(
+  ctx: CanvasRenderingContext2D,
+  doodle: { path: { x: number; y: number }[]; color?: string; width?: number },
+  format: BookFormat,
+  dpi: number
+): void {
+  const points = doodle.path;
+  if (!points || points.length < 2) return;
+
+  const pageW = mmToPx(format.width, dpi);
+  const pageH = mmToPx(format.height, dpi);
+  const color = doodle.color || '#c8c4bc';
+  const baseWidth = mmToPx(doodle.width ?? 0.4, dpi);
+
+  // 转换路径点为像素坐标
+  const pts = points.map(p => ({ x: p.x * pageW, y: p.y * pageH }));
+
+  // 生成带抖动和粗细变化的详细路径
+  function generatePath(seedOffset: number): { x: number; y: number; w: number }[] {
+    const path: { x: number; y: number; w: number }[] = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i];
+      const p1 = pts[i + 1];
+      const segments = 14;
+      for (let j = 0; j <= segments; j++) {
+        const t = j / segments;
+        let x = p0.x + (p1.x - p0.x) * t;
+        let y = p0.y + (p1.y - p0.y) * t;
+        // 端点不抖动，中间点加伪随机偏移
+        if (j > 0 && j < segments) {
+          const seed1 = Math.sin((i + seedOffset) * 12.9898 + j * 78.233) * 43758.5453;
+          const seed2 = Math.sin((i + seedOffset) * 4.123 + j * 9.456) * 23421.631;
+          const jitterX = (seed1 - Math.floor(seed1) - 0.5) * baseWidth * 4;
+          const jitterY = (seed2 - Math.floor(seed2) - 0.5) * baseWidth * 4;
+          x += jitterX;
+          y += jitterY;
+        }
+        // 粗细变化（0.5-1.5倍）
+        const widthSeed = Math.sin((i + seedOffset) * 7.123 + j * 3.456) * 12345.678;
+        const widthRatio = 0.5 + (widthSeed - Math.floor(widthSeed)) * 1.0;
+        path.push({ x, y, w: baseWidth * widthRatio });
+      }
+    }
+    return path;
+  }
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = color;
+
+  // 3次描边，每次有不同的偏移、透明度和粗细，模拟手绘多描
+  const passes = [
+    { offset: 0, alpha: 0.55, widthScale: 1.0 },
+    { offset: 50, alpha: 0.35, widthScale: 0.7 },
+    { offset: 120, alpha: 0.25, widthScale: 1.3 },
+  ];
+
+  for (const pass of passes) {
+    const path = generatePath(pass.offset);
+    ctx.globalAlpha = pass.alpha;
+    // 分段绘制，每段有不同的粗细
+    for (let i = 0; i < path.length - 1; i++) {
+      const p0 = path[i];
+      const p1 = path[i + 1];
+      ctx.lineWidth = (p0.w + p1.w) / 2 * pass.widthScale;
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
+ * 手绘连线（shape元素版本）：用二次贝塞尔曲线连接路径点
+ */
+function drawDoodleLine(ctx: CanvasRenderingContext2D, el: ShapeElement, dpi: number): void {
+  const points = el.doodlePath;
+  if (!points || points.length < 2) return;
+
+  const x = mmToPx(el.x, dpi);
+  const y = mmToPx(el.y, dpi);
+  const w = mmToPx(el.width, dpi);
+  const h = mmToPx(el.height, dpi);
+
+  ctx.save();
+  ctx.globalAlpha = el.opacity ?? 1;
+  ctx.strokeStyle = el.doodleColor || '#e74c3c';
+  ctx.lineWidth = mmToPx(el.doodleWidth ?? 1.5, dpi);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // 转换路径点为像素坐标
+  const pts = points.map(p => ({
+    px: x + p.x * w,
+    py: y + p.y * h,
+  }));
+
+  ctx.beginPath();
+  ctx.moveTo(pts[0].px, pts[0].py);
+
+  // 用二次贝塞尔曲线连接，控制点稍微偏移模拟手绘
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i];
+    const p1 = pts[i + 1];
+    // 中点作为控制点，加一点随机抖动（用固定的伪随机，避免每次重绘都变）
+    const midX = (p0.px + p1.px) / 2;
+    const midY = (p0.py + p1.py) / 2;
+    // 基于索引的伪随机偏移
+    const jitter = ((i * 37) % 10 - 5) * 0.3;
+    ctx.quadraticCurveTo(midX + jitter, midY - jitter, p1.px, p1.py);
+  }
+
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawShapeElement(ctx: CanvasRenderingContext2D, el: ShapeElement, dpi: number) {
   // 手绘时钟样式
   if (el.clockStyle) {
@@ -514,6 +645,11 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, el: ShapeElement, dpi: 
   // 手撕纸条样式
   if (el.tornPaper) {
     drawTornPaper(ctx, el, dpi);
+    return;
+  }
+  // 手绘连线样式
+  if (el.doodleLine) {
+    drawDoodleLine(ctx, el, dpi);
     return;
   }
 

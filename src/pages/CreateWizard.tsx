@@ -246,7 +246,7 @@ export default function CreateWizard() {
         {step === 'upload' && (
           <div className="max-w-4xl mx-auto">
             <h2 className="text-lg font-medium text-gray-700 mb-4">选择照片</h2>
-            <p className="text-sm text-gray-500 mb-6">一次可以选择多张照片，系统会自动排版生成相册。建议上传 4-20 张效果最佳。</p>
+            <p className="text-sm text-gray-500 mb-6">一次可以选择多张照片，系统会自动排版生成相册。建议上传 10-40 张效果最佳。</p>
 
             {/* 拖拽上传区域 */}
             <div

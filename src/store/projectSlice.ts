@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { Project, Page, Element, BookFormat, ImageElement } from '@/types';
+import type { Project, Page, Element, BookFormat, ImageElement, PageDoodle } from '@/types';
 import { PRESET_FORMATS } from '@/types';
 import { isBodyText } from '@/utils/bodyText';
 import { spreadGroupAt } from '@/utils/spreadLayout';
@@ -158,12 +158,21 @@ export const projectSlice = createSlice({
       state.current.pages[action.payload.pageIndex].background = action.payload.background;
       state.current.updatedAt = Date.now();
     },
-    replacePageElements(state, action: PayloadAction<{ pageIndex: number; elements: Element[]; templateId?: string }>) {
+    replacePageElements(state, action: PayloadAction<{ pageIndex: number; elements: Element[]; templateId?: string; doodle?: PageDoodle; background?: string }>) {
       if (!state.current) return;
       const page = state.current.pages[action.payload.pageIndex];
       page.elements = action.payload.elements;
       if (action.payload.templateId !== undefined) {
         page.templateId = action.payload.templateId;
+      }
+      if (action.payload.doodle !== undefined) {
+        page.doodle = action.payload.doodle;
+      } else {
+        // 模板没有doodle时清除
+        delete page.doodle;
+      }
+      if (action.payload.background !== undefined) {
+        page.background = { type: 'color', value: action.payload.background };
       }
       state.current.updatedAt = Date.now();
     },

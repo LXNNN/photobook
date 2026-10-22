@@ -34,6 +34,7 @@ export const ART_FONT_OPTIONS: FontOption[] = [
   { label: '龙藏体', value: '"Long Cang", "KaiTi", serif' },
   { label: 'Great Vibes（英文花体）', value: '"Great Vibes", cursive' },
   { label: 'Playfair Display（英文衬线）', value: '"Playfair Display", serif' },
+  { label: 'Montserrat（英文无衬线）', value: '"Montserrat", sans-serif' },
 ];
 
 /** 系统字体：靠用户电脑自己装的字体，换电脑/换系统可能不一样 */

@@ -1,4 +1,4 @@
-import type { Element, BookFormat, Page, ImageElement, TextElement, FontWeight, CropArea, AlbumStyleId } from '@/types';
+import type { Element, BookFormat, Page, ImageElement, TextElement, FontWeight, CropArea, AlbumStyleId, PageDoodle } from '@/types';
 import { generateId } from '@/utils/units';
 import { getRandomText, randomPick } from './copywriting';
 import { getTemplateCopyList } from './templateCopy';
@@ -12,7 +12,7 @@ import { DEFAULT_BODY_COLOR, DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
 export interface TemplateDefinition {
   id: string;
   name: string;
-  category: '封面' | '尾页' | '一图' | '二图' | '三图' | '四图' | '五图' | '六图' | '十图' | '十二图' | '文字封面' | '我的模板';
+  category: '封面' | '尾页' | '一图' | '二图' | '三图' | '四图' | '五图' | '六图' | '八图' | '十图' | '十二图' | '文字封面' | '我的模板';
   description: string;
   /** 缩略图用的 SVG 路径（用于模板面板预览） */
   thumbnail: string;
@@ -22,6 +22,10 @@ export interface TemplateDefinition {
   styleId?: AlbumStyleId;
   /** 黑色类型标识：预留字段，后续用于区分不同的黑色处理方案 */
   blackType?: number;
+  /** 页面级手绘连线装饰（不是元素，不可选中拖拽，直接画在背景上） */
+  doodle?: PageDoodle;
+  /** 模板背景色（应用模板时设置页面背景） */
+  background?: string;
 }
 
 export interface TemplateElement {
@@ -63,6 +67,10 @@ export interface TemplateElement {
   filmRightEdge?: boolean;
   /** @deprecated 旧的左右边框总开关，已拆分，保留兼容 */
   filmSideEdge?: boolean;
+  /** 图片元素的邮票边缘效果（四边齿孔） */
+  stampEdge?: boolean;
+  /** 图片元素的圆形选区效果（正圆裁剪） */
+  circleEdge?: boolean;
   /** 照片选区边框宽度（mm），不填=无边框 */
   borderWidth?: number;
   /** 照片选区边框颜色，默认黑色 */
@@ -71,10 +79,20 @@ export interface TemplateElement {
   clockStyle?: boolean;
   /** 形状元素：手撕纸条样式（暖色背景+手撕边缘+底部手绘线） */
   tornPaper?: boolean;
+  /** 形状元素：手绘连线样式，绘制doodlePath定义的曲线 */
+  doodleLine?: boolean;
+  /** 手绘连线路径点（相对于元素的比例坐标0-1） */
+  doodlePath?: { x: number; y: number }[];
+  /** 手绘连线颜色，默认#e74c3c */
+  doodleColor?: string;
+  /** 手绘连线宽度（mm），默认1.5 */
+  doodleWidth?: number;
   /** 图片元素的裁剪区域（相对原图，0-1）；不填则铺满整张图 */
   crop?: CropArea;
   /** 元素透明度 0-1，不填按 1 处理 */
   opacity?: number;
+  /** 锁定元素：不可选中、不可移动、不可编辑（用于装饰文字等固定元素） */
+  locked?: boolean;
   /** 文字旋转角度（度） */
   rotation?: number;
   /** 文字行高 */
@@ -316,6 +334,59 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'image', x: 0.45, y: 0.08, width: 0.5, height: 0.84, cropHint: 'cover' },
     ],
   },
+  {
+    id: 'one-stamp-diagonal',
+    name: '1.1',
+    category: '一图',
+    styleId: 'atmosphere',
+    description: '居中邮票选区+左上到右下斜向散落英文字母，文艺拼贴感',
+    thumbnail: 'one-stamp',
+    elements: [
+      // 居中邮票选区
+      { type: 'image', x: 0.225, y: 0.2571, width: 0.55, height: 0.4857, cropHint: 'cover', stampEdge: true },
+      // 斜向散落英文字母（固定装饰文字，不填充文案）
+      { type: 'text', x: 0.0676, y: 0.0476, width: 0.0541, height: 0.0381, placeholder: 'A', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -15 },
+      { type: 'text', x: 0.1689, y: 0.0952, width: 0.0541, height: 0.0381, placeholder: 'B', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 20 },
+      { type: 'text', x: 0.1014, y: 0.1667, width: 0.0541, height: 0.0381, placeholder: 'C', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -25 },
+      { type: 'text', x: 0.2365, y: 0.1905, width: 0.0541, height: 0.0381, placeholder: 'D', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 10 },
+      { type: 'text', x: 0.1351, y: 0.2619, width: 0.0541, height: 0.0381, placeholder: 'E', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -20 },
+      { type: 'text', x: 0.3041, y: 0.2857, width: 0.0541, height: 0.0381, placeholder: 'F', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 15 },
+      { type: 'text', x: 0.2027, y: 0.3571, width: 0.0541, height: 0.0381, placeholder: 'G', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -10 },
+      { type: 'text', x: 0.3716, y: 0.381, width: 0.0541, height: 0.0381, placeholder: 'H', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 25 },
+      { type: 'text', x: 0.2703, y: 0.4524, width: 0.0541, height: 0.0381, placeholder: 'I', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -15 },
+      { type: 'text', x: 0.4392, y: 0.4762, width: 0.0541, height: 0.0381, placeholder: 'J', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 20 },
+      { type: 'text', x: 0.3378, y: 0.5476, width: 0.0541, height: 0.0381, placeholder: 'K', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -20 },
+      { type: 'text', x: 0.5068, y: 0.5714, width: 0.0541, height: 0.0381, placeholder: 'L', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 10 },
+      { type: 'text', x: 0.4054, y: 0.6429, width: 0.0541, height: 0.0381, placeholder: 'M', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -25 },
+      { type: 'text', x: 0.5743, y: 0.6667, width: 0.0541, height: 0.0381, placeholder: 'N', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 15 },
+      { type: 'text', x: 0.473, y: 0.7381, width: 0.0541, height: 0.0381, placeholder: 'O', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -10 },
+      { type: 'text', x: 0.6419, y: 0.7619, width: 0.0541, height: 0.0381, placeholder: 'P', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 20 },
+      { type: 'text', x: 0.5405, y: 0.8333, width: 0.0541, height: 0.0381, placeholder: 'Q', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -15 },
+      { type: 'text', x: 0.7095, y: 0.8571, width: 0.0541, height: 0.0381, placeholder: 'R', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 25 },
+      { type: 'text', x: 0.6081, y: 0.9048, width: 0.0541, height: 0.0381, placeholder: 'S', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -20 },
+      { type: 'text', x: 0.777, y: 0.9286, width: 0.0541, height: 0.0381, placeholder: 'T', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 10 },
+      { type: 'text', x: 0.1216, y: 0.0714, width: 0.0541, height: 0.0381, placeholder: 'U', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 10 },
+      { type: 'text', x: 0.2162, y: 0.1333, width: 0.0541, height: 0.0381, placeholder: 'V', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -15 },
+      { type: 'text', x: 0.1486, y: 0.2, width: 0.0541, height: 0.0381, placeholder: 'W', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 20 },
+      { type: 'text', x: 0.2838, y: 0.2381, width: 0.0541, height: 0.0381, placeholder: 'X', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -10 },
+      { type: 'text', x: 0.1892, y: 0.3095, width: 0.0541, height: 0.0381, placeholder: 'Y', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 15 },
+      { type: 'text', x: 0.3514, y: 0.3333, width: 0.0541, height: 0.0381, placeholder: 'Z', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -20 },
+      { type: 'text', x: 0.2568, y: 0.4048, width: 0.0541, height: 0.0381, placeholder: 'A', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 25 },
+      { type: 'text', x: 0.4189, y: 0.4286, width: 0.0541, height: 0.0381, placeholder: 'B', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -15 },
+      { type: 'text', x: 0.3243, y: 0.5, width: 0.0541, height: 0.0381, placeholder: 'C', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 10 },
+      { type: 'text', x: 0.4865, y: 0.5238, width: 0.0541, height: 0.0381, placeholder: 'D', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -25 },
+      { type: 'text', x: 0.3919, y: 0.5952, width: 0.0541, height: 0.0381, placeholder: 'E', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 20 },
+      { type: 'text', x: 0.5541, y: 0.619, width: 0.0541, height: 0.0381, placeholder: 'F', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -10 },
+      { type: 'text', x: 0.4595, y: 0.6905, width: 0.0541, height: 0.0381, placeholder: 'G', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 15 },
+      { type: 'text', x: 0.6216, y: 0.7143, width: 0.0541, height: 0.0381, placeholder: 'H', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -20 },
+      { type: 'text', x: 0.527, y: 0.7857, width: 0.0541, height: 0.0381, placeholder: 'I', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 25 },
+      { type: 'text', x: 0.6892, y: 0.8095, width: 0.0541, height: 0.0381, placeholder: 'J', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -15 },
+      { type: 'text', x: 0.5946, y: 0.8667, width: 0.0541, height: 0.0381, placeholder: 'K', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 10 },
+      { type: 'text', x: 0.7297, y: 0.8952, width: 0.0541, height: 0.0381, placeholder: 'L', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -25 },
+      { type: 'text', x: 0.6622, y: 0.9429, width: 0.0541, height: 0.0381, placeholder: 'M', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 20 },
+      { type: 'text', x: 0.8108, y: 0.9524, width: 0.0541, height: 0.0381, placeholder: 'N', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -10 },
+    ],
+  },
   // ============ 多图拼贴 ============
   {
     id: 'two-images-stack',
@@ -418,7 +489,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   },
   {
     id: 'atm-three-snapshots',
-    name: '三图快照错落',
+    name: '3.1',
     category: '三图',
     description: '三图错落排列+英文装饰文字，文艺快照风格',
     thumbnail: '',
@@ -470,15 +541,15 @@ export const TEMPLATES: TemplateDefinition[] = [
     thumbnail: 'three-top-two-bottom-wide',
     elements: [
       // 标题（右对齐）
-      { type: 'text', x: 0.4676, y: 0.7871, width: 0.3797, height: 0.05, placeholder: '在这里写标题', fontSizeRatio: 0.0548, textAlign: 'right', fontWeight: 'bold', color: '#2c2c2c' },
+      { type: 'text', x: 0.4899, y: 0.8319, width: 0.3797, height: 0.05, placeholder: '在这里写标题', fontSizeRatio: 0.0548, textAlign: 'right', fontWeight: 'bold', color: '#2c2c2c', lineHeight: 1.5 },
       // 左上小图
-      { type: 'image', x: 0.1507, y: 0.2295, width: 0.3412, height: 0.2463, cropHint: 'cover' },
+      { type: 'image', x: 0.1169, y: 0.2533, width: 0.373, height: 0.2618, cropHint: 'cover' },
       // 右上小图
-      { type: 'image', x: 0.5061, y: 0.2295, width: 0.3412, height: 0.2463, cropHint: 'cover' },
+      { type: 'image', x: 0.5074, y: 0.2533, width: 0.373, height: 0.2618, cropHint: 'cover' },
       // 中间横大图
-      { type: 'image', x: 0.1507, y: 0.4867, width: 0.6969, height: 0.2379, cropHint: 'cover' },
+      { type: 'image', x: 0.1169, y: 0.5271, width: 0.7635, height: 0.2619, cropHint: 'cover' },
       // 正文
-      { type: 'text', x: 0.152, y: 0.1414, width: 0.6953, height: 0.0776, placeholder: '在这里写下你的故事和感受...', body: true, fontSizeRatio: 0.031, textAlign: 'left', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.1169, y: 0.1414, width: 0.7722, height: 0.0776, placeholder: '在这里写下你的故事和感受...', body: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
     ],
   },
   {
@@ -701,7 +772,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   },
   {
     id: 'atm-six-film-strip',
-    name: '六图胶卷错落',
+    name: '6.1',
     category: '六图',
     description: '三排错落排列，仿胶卷电影感，适合旅行记录',
     thumbnail: '',
@@ -724,7 +795,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   },
   {
     id: 'atm-five-banner-diary',
-    name: '五图横幅日记',
+    name: '5.1',
     category: '五图',
     description: '顶部横幅大图+底部错落小图+日期文字，旅行日记感',
     thumbnail: '',
@@ -743,6 +814,50 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'image', x: 0.7097, y: 0.6429, width: 0.2027, height: 0.1429, cropHint: 'cover', borderWidth: 0.5, borderColor: '#666666' },
       // 日期文字（右对齐，固定装饰文字）
       { type: 'text', x: 0.0516, y: 0.6767, width: 0.1635, height: 0.0752, placeholder: '2026年3月12日\n地点', fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'four-doodle-left',
+    name: '4.1',
+    category: '四图',
+    styleId: 'atmosphere',
+    description: '4个圆形照片+浅灰手绘连线蜿蜒串联，跨页左半部分',
+    thumbnail: '',
+    background: '#f5f0e8',
+    doodle: {
+      path: [
+        { x: 0.192, y: 0.175 },
+        { x: 0.266, y: 0.398 },
+        { x: 0.412, y: 0.603 },
+        { x: 0.641, y: 0.793 },
+        { x: 0.95, y: 0.82 },
+      ],
+      color: '#c8c4bc',
+      width: 0.4,
+    },
+    elements: [
+      // 第1个圆形照片
+      { type: 'image', x: 0.0878, y: 0.1262, width: 0.1757, height: 0.1238, cropHint: 'cover', circleEdge: true, borderWidth: 1, borderColor: '#ffffff' },
+      // 第2个圆形照片
+      { type: 'image', x: 0.1824, y: 0.3452, width: 0.1757, height: 0.1238, cropHint: 'cover', circleEdge: true, borderWidth: 1, borderColor: '#ffffff' },
+      // 第3个圆形照片
+      { type: 'image', x: 0.3311, y: 0.5490, width: 0.1757, height: 0.1238, cropHint: 'cover', circleEdge: true, borderWidth: 1, borderColor: '#ffffff' },
+      // 第4个圆形照片
+      { type: 'image', x: 0.5574, y: 0.7233, width: 0.1757, height: 0.1238, cropHint: 'cover', circleEdge: true, borderWidth: 1, borderColor: '#ffffff' },
+      // 装饰字1：Life lately
+      { type: 'text', x: 0.4993, y: 0.2452, width: 0.3432, height: 0.0643, placeholder: '"Life lately"', fixed: true, fontSizeRatio: 0.0669, textAlign: 'center', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      // 装饰字2：Moments worth keeping forever.
+      { type: 'text', x: 0.4993, y: 0.3095, width: 0.3932, height: 0.0629, placeholder: 'Moments worth keeping forever.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      // 装饰字3：Collecting moments, one frame at a time.
+      { type: 'text', x: 0.0878, y: 0.8286, width: 0.6, height: 0.0952, placeholder: '"Collecting moments, one frame at a time."', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      // 正文1：9:00 吃饭
+      { type: 'text', x: 0.3014, y: 0.1767, width: 0.2027, height: 0.0714, placeholder: '9:00\n吃饭', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      // 正文2：11:00 出发
+      { type: 'text', x: 0.3919, y: 0.3929, width: 0.2027, height: 0.0714, placeholder: '11:00\n出发', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      // 正文3：13:00 赏花
+      { type: 'text', x: 0.5473, y: 0.6, width: 0.2027, height: 0.0714, placeholder: '13:00\n赏花', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      // 正文4：17:00 夜景
+      { type: 'text', x: 0.7845, y: 0.7605, width: 0.2027, height: 0.0714, placeholder: '17:00\n夜景', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
     ],
   },
   {
@@ -774,7 +889,7 @@ export const TEMPLATES: TemplateDefinition[] = [
   },
   {
     id: 'atm-clock-twelve',
-    name: '十二图时钟',
+    name: '12.1',
     category: '十二图',
     description: '手绘时钟风格，12张照片围绕时钟排列，记录每一刻美好时光',
     thumbnail: '',
@@ -826,7 +941,7 @@ export function applyTemplate(
   themeId: string = 'travel',
   bodyFontSize: number = DEFAULT_BODY_FONT_SIZE,
   bodyColor: string = DEFAULT_BODY_COLOR
-): Element[] {
+): { elements: Element[]; doodle?: PageDoodle; background?: string } {
   let imageIndex = 0;
   const elements: Element[] = [];
 
@@ -865,6 +980,7 @@ export function applyTemplate(
       rotation: tplEl.rotation ?? 0,
       opacity: tplEl.opacity ?? 1,
       zIndex: i,
+      locked: tplEl.locked === true,
     };
 
     if (tplEl.type === 'image') {
@@ -881,6 +997,10 @@ export function applyTemplate(
         // 胶卷左右黑边（独立控制，默认true；filmSideEdge是旧总开关，兼容）
         filmLeftEdge: tplEl.filmLeftEdge ?? tplEl.filmSideEdge ?? true,
         filmRightEdge: tplEl.filmRightEdge ?? tplEl.filmSideEdge ?? true,
+        // 邮票边缘效果
+        stampEdge: tplEl.stampEdge === true,
+        // 圆形选区效果
+        circleEdge: tplEl.circleEdge === true,
         // 照片选区边框
         borderWidth: tplEl.borderWidth,
         borderColor: tplEl.borderColor,
@@ -896,6 +1016,10 @@ export function applyTemplate(
         borderWidth: (tplEl as any).borderWidth,
         clockStyle: (tplEl as any).clockStyle === true,
         tornPaper: (tplEl as any).tornPaper === true,
+        doodleLine: (tplEl as any).doodleLine === true,
+        doodlePath: (tplEl as any).doodlePath ? JSON.parse(JSON.stringify((tplEl as any).doodlePath)) : undefined,
+        doodleColor: (tplEl as any).doodleColor,
+        doodleWidth: (tplEl as any).doodleWidth,
       });
     } else {
       // 根据模板文案填充
@@ -992,7 +1116,7 @@ export function applyTemplate(
     }
   }
 
-  return elements;
+  return { elements, doodle: template.doodle ? JSON.parse(JSON.stringify(template.doodle)) : undefined, background: template.background };
 }
 
 /**
@@ -1245,14 +1369,14 @@ export function reapplyTemplateKeepingContent(
   format: BookFormat,
   page: Page,
   themeId: string = 'travel'
-): Element[] {
+): { elements: Element[]; doodle?: PageDoodle; background?: string } {
   const oldElements = page.elements.filter((el) => el.type === 'image' || el.type === 'text');
   const imageIds = oldElements
     .filter((el) => el.type === 'image')
     .map((el) => (el as ImageElement).imageId);
   const oldTexts = oldElements.filter((el) => el.type === 'text') as TextElement[];
 
-  const fresh = applyTemplate(template, format, imageIds, themeId);
+  const { elements: fresh, doodle } = applyTemplate(template, format, imageIds, themeId);
 
   let textIndex = 0;
   for (const el of fresh) {
@@ -1261,13 +1385,13 @@ export function reapplyTemplateKeepingContent(
     if (old?.content) (el as TextElement).content = old.content;
     textIndex++;
   }
-  return fresh;
+  return { elements: fresh, doodle, background: template.background };
 }
 
 /**
  * 模板分类的固定显示顺序
  */
-const CATEGORY_ORDER: TemplateDefinition['category'][] = ['封面', '尾页', '一图', '二图', '三图', '四图', '五图', '六图', '十图', '十二图', '文字封面', '我的模板'];
+const CATEGORY_ORDER: TemplateDefinition['category'][] = ['封面', '尾页', '一图', '二图', '三图', '四图', '五图', '六图', '八图', '十图', '十二图', '文字封面', '我的模板'];
 
 /**
  * 获取模板分类列表（按固定顺序排列）

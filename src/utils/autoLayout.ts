@@ -768,14 +768,15 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
 
     const makePage = (template: TemplateDefinition, pagePhotos: AutoPhoto[]): Page => {
       const orderedIds = orderPhotosForTemplate(template, pagePhotos, format);
-      const elements = applyTemplate(template, format, orderedIds, themeId, bodyFontSize);
+      const { elements, doodle, background } = applyTemplate(template, format, orderedIds, themeId, bodyFontSize);
       // 满版图没有文字元素，这一步对它自然是空操作；带文案的单图模板要填
       fillTextElements(elements, theme, used, format);
       return {
         id: generateId(),
-        background: { type: 'color', value: '#ffffff' },
+        background: { type: 'color', value: background || '#ffffff' },
         elements,
         templateId: template.id,
+        doodle,
       };
     };
 
@@ -821,12 +822,13 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
   } else if (photos.length > 0) {
     // 只有 1 张照片：凑不出一对，放一页满版；页数奇偶最后统一兜底
     const template = getTemplateCandidates(1)[0];
-    const elements = applyTemplate(template, format, [photos[0].id], themeId, bodyFontSize);
+    const { elements, doodle, background } = applyTemplate(template, format, [photos[0].id], themeId, bodyFontSize);
     pages.push({
       id: generateId(),
-      background: { type: 'color', value: '#ffffff' },
+      background: { type: 'color', value: background || '#ffffff' },
       elements,
       templateId: template.id,
+      doodle,
     });
   }
 
@@ -878,7 +880,7 @@ function createCoverPage(projectName: string, format: BookFormat, imageId: strin
 
   // 用旅行杂志封面模板，第一张图片做背景
   const template = TEMPLATES.find((t) => t.id === 'cover-travel-journal')!;
-  const templateElements = applyTemplate(template, format, [imageId]);
+  const { elements: templateElements, doodle, background } = applyTemplate(template, format, [imageId]);
 
   // 填充封面文案：只填大标题，其他文字保持模板默认内容
   for (const el of templateElements) {
@@ -896,9 +898,10 @@ function createCoverPage(projectName: string, format: BookFormat, imageId: strin
 
   return {
     id: generateId(),
-    background: { type: 'color', value: '#ffffff' },
+    background: { type: 'color', value: background || '#ffffff' },
     elements,
     templateId: 'cover-travel-journal',
+    doodle,
   };
 }
 
@@ -908,13 +911,14 @@ function createCoverPage(projectName: string, format: BookFormat, imageId: strin
  */
 function createEndingPage(format: BookFormat, lastImageId?: string): Page {
   const template = TEMPLATES.find((t) => t.id === 'ending-minimal')!;
-  const elements = applyTemplate(template, format, lastImageId ? [lastImageId] : []);
+  const { elements, doodle, background } = applyTemplate(template, format, lastImageId ? [lastImageId] : []);
 
   return {
     id: generateId(),
-    background: { type: 'color', value: '#faf8f5' },
+    background: { type: 'color', value: background || '#faf8f5' },
     elements,
     templateId: 'ending-minimal',
+    doodle,
   };
 }
 

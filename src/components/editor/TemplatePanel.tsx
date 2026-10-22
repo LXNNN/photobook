@@ -74,7 +74,7 @@ export default function TemplatePanel({ format, onApplied }: Props) {
     const currentPageImages = allImageIds.slice(0, neededSlots);
 
     // 应用模板到当前页（记录模板 ID，支持"保存模板"回写）
-    const elements = applyTemplate(
+    const { elements, doodle, background } = applyTemplate(
       template,
       format,
       currentPageImages,
@@ -82,7 +82,7 @@ export default function TemplatePanel({ format, onApplied }: Props) {
       project.bodyFontSize || DEFAULT_BODY_FONT_SIZE,
       project.bodyColor || DEFAULT_BODY_COLOR
     );
-    dispatch(replacePageElements({ pageIndex, elements, templateId: template.id }));
+    dispatch(replacePageElements({ pageIndex, elements, templateId: template.id, doodle, background }));
 
     dispatch(clearSelection());
     // 不跳到别的页：用户正在看哪个跨页就留在哪个跨页
