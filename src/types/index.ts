@@ -55,14 +55,22 @@ export interface Page {
   doodle?: PageDoodle;
 }
 
-/** 页面级手绘连线装饰 */
+/** 页面级手绘装饰 */
 export interface PageDoodle {
+  /** 装饰类型：line=手绘连线，clothesline=晾衣架 */
+  type?: 'line' | 'clothesline';
   /** 路径点（相对于页面的比例坐标0-1） */
-  path: { x: number; y: number }[];
+  path?: { x: number; y: number }[];
   /** 连线颜色，默认#c8c4bc */
   color?: string;
   /** 连线宽度（mm），默认1 */
   width?: number;
+  /** 晾衣架x位置（比例），type=clothesline时使用 */
+  hangerX?: number;
+  /** 晾衣架y位置（比例），type=clothesline时使用 */
+  hangerY?: number;
+  /** 四张照片挂线的终点位置（比例），type=clothesline时使用 */
+  photoAnchors?: { x: number; y: number }[];
 }
 
 export interface PageBackground {
@@ -83,6 +91,8 @@ export interface BaseElement {
   opacity: number;
   zIndex: number;
   locked?: boolean;
+  /** 固定元素：不可拖拽移动，装饰元素用（时间轴、doodle等） */
+  fixed?: boolean;
 }
 
 export interface ImageElement extends BaseElement {
@@ -151,6 +161,20 @@ export interface ShapeElement extends BaseElement {
   doodleColor?: string;
   /** 手绘连线宽度（mm），默认1.5 */
   doodleWidth?: number;
+  /** 手绘晾衣架样式：true时绘制弧线+衣架+四条挂线，忽略背景色 */
+  clothesline?: boolean;
+  /** 晾衣架线条颜色，默认#5a5a5a */
+  clotheslineColor?: string;
+  /** 晾衣架线条宽度（mm），默认0.5 */
+  clotheslineWidth?: number;
+  /** 竖向时间轴样式：true时绘制竖线+节点圆点，忽略背景色 */
+  timeline?: boolean;
+  /** 时间轴颜色，默认#b8a88a */
+  timelineColor?: string;
+  /** 时间轴线宽（mm），默认0.5 */
+  timelineWidth?: number;
+  /** 时间轴节点数量，默认5 */
+  timelineNodes?: number;
 }
 
 export interface CropArea {

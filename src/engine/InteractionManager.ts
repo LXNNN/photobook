@@ -126,6 +126,12 @@ export class InteractionManager {
     return this.pages.find((page) => page.index === index);
   }
 
+  /** 判断图片元素是否占满整个页面（大图不参与拖拽调换顺序） */
+  private isFullPageImage(el: Element): boolean {
+    if (el.type !== 'image') return false;
+    return el.width > this.format.width * 0.8 && el.height > this.format.height * 0.8;
+  }
+
   private findElementById(id: string): { element: Element; pageIndex: number; offsetX: number } | null {
     for (const page of this.pages) {
       const element = page.elements.find((el) => el.id === id);
@@ -242,10 +248,24 @@ export class InteractionManager {
     let snappedX = newX;
     let snappedY = newY;
 
-    // 检测垂直对齐（竖线）
+    // 页面中心吸附（竖线：元素中心对齐页面水平中线）
+    const pageCenterX = this.format.width / 2;
+    const pageCenterY = this.format.height / 2;
+
+    // 检测垂直对齐（竖线）：先检测页面中心
     let minDistX = tolerance;
     let bestGuideX: number | null = null;
     let bestOffset = 0;
+
+    // 页面水平中线：元素中心对齐页面中心
+    {
+      const dist = Math.abs(elCenterX - pageCenterX);
+      if (dist < minDistX) {
+        minDistX = dist;
+        bestGuideX = pageCenterX;
+        bestOffset = pageCenterX - elCenterX;
+      }
+    }
 
     for (const other of otherElements) {
       const lines = [
@@ -319,10 +339,20 @@ export class InteractionManager {
       }
     }
 
-    // 检测水平对齐（横线）
+    // 检测水平对齐（横线）：先检测页面中心
     let minDistY = tolerance;
     let bestGuideY: number | null = null;
     let bestOffsetY = 0;
+
+    // 页面垂直中线：元素中心对齐页面中心
+    {
+      const dist = Math.abs(elCenterY - pageCenterY);
+      if (dist < minDistY) {
+        minDistY = dist;
+        bestGuideY = pageCenterY;
+        bestOffsetY = pageCenterY - elCenterY;
+      }
+    }
 
     for (const other of otherElements) {
       const lines = [
@@ -602,10 +632,10 @@ export class InteractionManager {
 
       // 检测是否拖到了同一页的另一个图片元素上（用于调换位置）
       let newHoverTarget: string | null = null;
-      if (singlePage && this.startElement.type === 'image') {
+      if (singlePage && this.startElement.type === 'image' && !this.isFullPageImage(this.startElement)) {
         const cx = newX + this.startElement.width / 2;
         const cy = newY + this.startElement.height / 2;
-        const otherElements = pageElements.filter((el) => el.id !== this.startElement!.id);
+        const otherElements = pageElements.filter((el) => el.id !== this.startElement!.id && !this.isFullPageImage(el));
         const hit = this.hitTest(otherElements, cx, cy);
         if (hit && hit.element.type === 'image') {
           newHoverTarget = hit.element.id;

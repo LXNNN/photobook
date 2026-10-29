@@ -472,7 +472,7 @@ function PageProperties({ page, pageIndex }: { page: Page; pageIndex: number }) 
         <div>
           <label className="block text-xs text-gray-500 mb-1.5">常用背景</label>
           <div className="grid grid-cols-6 gap-1.5">
-            {['#ffffff', '#faf8f5', '#f5f0e8', '#e8e4de', '#2c2c2c', '#1a1a1a', '#fef3c7', '#dbeafe', '#dcfce7', '#fce7f3', '#ede9fe', '#fee2e2'].map((color) => (
+            {['#ffffff', '#faf8f5', '#f5f0e8', '#e8e4de', '#2c2c2c', '#1a1a1a', '#fef3c7', '#dbeafe', '#dcfce7', '#fce7f3', '#ede9fe', '#fee2e2', '#fde68a', '#4a7fa5', '#5a8769', '#913100', '#b8956e', '#f3c1c1'].map((color) => (
               <button
                 key={color}
                 onClick={() => dispatch(setPageBackground({ pageIndex, background: { type: 'color', value: color } }))}

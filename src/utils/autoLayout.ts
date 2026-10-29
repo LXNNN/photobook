@@ -773,7 +773,7 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
       fillTextElements(elements, theme, used, format);
       return {
         id: generateId(),
-        background: { type: 'color', value: background || '#ffffff' },
+        background: background || { type: 'color', value: '#ffffff' },
         elements,
         templateId: template.id,
         doodle,
@@ -825,7 +825,7 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
     const { elements, doodle, background } = applyTemplate(template, format, [photos[0].id], themeId, bodyFontSize);
     pages.push({
       id: generateId(),
-      background: { type: 'color', value: background || '#ffffff' },
+      background: background || { type: 'color', value: '#ffffff' },
       elements,
       templateId: template.id,
       doodle,
@@ -898,7 +898,7 @@ function createCoverPage(projectName: string, format: BookFormat, imageId: strin
 
   return {
     id: generateId(),
-    background: { type: 'color', value: background || '#ffffff' },
+    background: background || { type: 'color', value: '#ffffff' },
     elements,
     templateId: 'cover-travel-journal',
     doodle,
@@ -915,7 +915,7 @@ function createEndingPage(format: BookFormat, lastImageId?: string): Page {
 
   return {
     id: generateId(),
-    background: { type: 'color', value: background || '#faf8f5' },
+    background: background || { type: 'color', value: '#faf8f5' },
     elements,
     templateId: 'ending-minimal',
     doodle,

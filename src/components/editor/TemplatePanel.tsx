@@ -212,17 +212,24 @@ function TemplateThumbnail({ templateId }: { templateId: string }) {
         const h = el.height * 210;
 
         if (el.type === 'image') {
+          // 满版大图用深色背景，卡片选区用白色
+          const isFull = el.width > 0.8 && el.height > 0.8;
+          const isCard = 'cardEdge' in el && (el as any).cardEdge;
+          const fillColor = isCard ? '#ffffff' : '#d0d0d0';
+          const innerColor = isCard ? '#d0d0d0' : '#b0b0b0';
           return (
             <g key={idx}>
-              <rect x={x} y={y} width={w} height={h} fill="#d0d0d0" rx="1" />
-              {/* 图片图标示意 */}
-              <circle cx={x + w * 0.3} cy={y + h * 0.35} r={Math.min(w, h) * 0.08} fill="#b0b0b0" />
+              <rect x={x} y={y} width={w} height={h} fill={fillColor} stroke="#ccc" strokeWidth="0.3" rx="1" />
+              <circle cx={x + w * 0.3} cy={y + h * 0.35} r={Math.min(w, h) * 0.08} fill={innerColor} />
               <polygon
                 points={`${x + w * 0.1},${y + h * 0.85} ${x + w * 0.45},${y + h * 0.5} ${x + w * 0.7},${y + h * 0.7} ${x + w * 0.85},${y + h * 0.55} ${x + w * 0.95},${y + h * 0.85}`}
-                fill="#b0b0b0"
+                fill={innerColor}
               />
             </g>
           );
+        } else if (el.type === 'shape') {
+          const fill = 'clockStyle' in el && (el as any).clockStyle ? 'none' : (el as any).backgroundColor || '#ffffff';
+          return <rect key={idx} x={x} y={y} width={w} height={h} fill={fill} stroke="#ddd" strokeWidth="0.3" rx="1" />;
         } else {
           // 文字元素：用横线示意
           const isTitle = (el.fontSizeRatio || 0) > 0.05;

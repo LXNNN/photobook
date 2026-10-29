@@ -1,9 +1,10 @@
-import type { Element, BookFormat, Page, ImageElement, TextElement, FontWeight, CropArea, AlbumStyleId, PageDoodle } from '@/types';
+import type { Element, BookFormat, Page, ImageElement, TextElement, FontWeight, CropArea, AlbumStyleId, PageDoodle, PageBackground } from '@/types';
 import { generateId } from '@/utils/units';
 import { getRandomText, randomPick } from './copywriting';
 import { getTemplateCopyList } from './templateCopy';
 import { getThemeById } from './themes';
 import { DEFAULT_BODY_COLOR, DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
+import moban1Bg from '@/assets/moban1.png';
 
 /**
  * 模板定义
@@ -12,7 +13,7 @@ import { DEFAULT_BODY_COLOR, DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
 export interface TemplateDefinition {
   id: string;
   name: string;
-  category: '封面' | '尾页' | '一图' | '二图' | '三图' | '四图' | '五图' | '六图' | '八图' | '十图' | '十二图' | '文字封面' | '我的模板';
+  category: '封面' | '尾页' | '一图' | '二图' | '三图' | '四图' | '五图' | '六图' | '七图' | '八图' | '十图' | '十二图' | '文字封面' | '我的模板';
   description: string;
   /** 缩略图用的 SVG 路径（用于模板面板预览） */
   thumbnail: string;
@@ -26,6 +27,8 @@ export interface TemplateDefinition {
   doodle?: PageDoodle;
   /** 模板背景色（应用模板时设置页面背景） */
   background?: string;
+  /** 模板背景图（应用模板时设置页面背景图，不可移动缩放），优先级高于background */
+  backgroundImage?: string;
 }
 
 export interface TemplateElement {
@@ -69,6 +72,8 @@ export interface TemplateElement {
   filmSideEdge?: boolean;
   /** 图片元素的邮票边缘效果（四边齿孔） */
   stampEdge?: boolean;
+  /** 图片元素的卡片选区效果（白卡片+底部波浪+投影） */
+  cardEdge?: boolean;
   /** 图片元素的圆形选区效果（正圆裁剪） */
   circleEdge?: boolean;
   /** 照片选区边框宽度（mm），不填=无边框 */
@@ -87,6 +92,20 @@ export interface TemplateElement {
   doodleColor?: string;
   /** 手绘连线宽度（mm），默认1.5 */
   doodleWidth?: number;
+  /** 形状元素：手绘晾衣架样式（弧线+衣架+四条挂线） */
+  clothesline?: boolean;
+  /** 晾衣架线条颜色，默认#5a5a5a */
+  clotheslineColor?: string;
+  /** 晾衣架线条宽度（mm），默认0.5 */
+  clotheslineWidth?: number;
+  /** 形状元素：竖向时间轴样式（竖线+节点圆点） */
+  timeline?: boolean;
+  /** 时间轴颜色，默认#b8a88a */
+  timelineColor?: string;
+  /** 时间轴线宽（mm），默认0.5 */
+  timelineWidth?: number;
+  /** 时间轴节点数量，默认5 */
+  timelineNodes?: number;
   /** 图片元素的裁剪区域（相对原图，0-1）；不填则铺满整张图 */
   crop?: CropArea;
   /** 元素透明度 0-1，不填按 1 处理 */
@@ -387,6 +406,97 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'text', x: 0.8108, y: 0.9524, width: 0.0541, height: 0.0381, placeholder: 'N', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -10 },
     ],
   },
+  {
+    id: 'atm-one-full',
+    name: '1.2',
+    category: '一图',
+    styleId: 'atmosphere',
+    description: '一张照片铺满整张页面，无装饰，极简沉浸感',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 1, height: 1, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'atm-one-film-letters',
+    name: '1.3',
+    category: '一图',
+    styleId: 'atmosphere',
+    description: '胶卷横图居中+彩色英文字母散落装饰+TO THE GOOD DAYS标题，复古拼贴感',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.1482, y: 0.3177, width: 0.6974, height: 0.3702, cropHint: 'cover', filmEdge: true },
+      { type: 'text', x: 0.4755, y: 0.1388, width: 0.3893, height: 0.0952, placeholder: '"TOTHEGOODDAYS."', fixed: true, fontSizeRatio: 0.0477, textAlign: 'right', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      // 左上角散落字母
+      { type: 'text', x: 0.175, y: 0.2114, width: 0.1112, height: 0.0671, placeholder: 'A', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#bd4c4c', lineHeight: 1.5, rotation: -12.48 },
+      { type: 'text', x: 0.246, y: 0.2114, width: 0.0742, height: 0.0451, placeholder: 'B', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#729d6c', lineHeight: 1.5 },
+      { type: 'text', x: 0.309, y: 0.245, width: 0.0907, height: 0.0592, placeholder: 'C', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#eed349', lineHeight: 1.5 },
+      { type: 'text', x: 0.3997, y: 0.2746, width: 0.0863, height: 0.0452, placeholder: 'D', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.175, y: 0.2742, width: 0.0914, height: 0.0435, placeholder: 'E', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#8689ee', lineHeight: 1.5 },
+      { type: 'text', x: 0.2433, y: 0.2562, width: 0.0796, height: 0.0506, placeholder: 'F', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#d23737', lineHeight: 1.5, rotation: -35.86 },
+      { type: 'text', x: 0.2879, y: 0.2995, width: 0.0701, height: 0.0398, placeholder: 'G', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#c729a5', lineHeight: 1.5, rotation: 19.12 },
+      // 右下角散落字母
+      { type: 'text', x: 0.4969, y: 0.7062, width: 0.1011, height: 0.0431, placeholder: 'E', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#8689ee', lineHeight: 1.5, rotation: -13.43 },
+      { type: 'text', x: 0.5697, y: 0.7493, width: 0.0954, height: 0.0543, placeholder: 'F', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#d23737', lineHeight: 1.5, rotation: -12.39 },
+      { type: 'text', x: 0.6378, y: 0.795, width: 0.1045, height: 0.0671, placeholder: 'G', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#c729a5', lineHeight: 1.5, rotation: 9.45 },
+      { type: 'text', x: 0.7571, y: 0.7836, width: 0.1363, height: 0.0585, placeholder: 'H', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#3fd534', lineHeight: 1.5, rotation: -4.66 },
+      { type: 'text', x: 0.598, y: 0.7062, width: 0.0878, height: 0.043, placeholder: 'A', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#bd4c4c', lineHeight: 1.5 },
+      { type: 'text', x: 0.6701, y: 0.7131, width: 0.1443, height: 0.0474, placeholder: 'B', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#729d6c', lineHeight: 1.5, rotation: -22.31 },
+      { type: 'text', x: 0.7676, y: 0.7152, width: 0.1342, height: 0.0531, placeholder: 'C', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#eed349', lineHeight: 1.5, rotation: -14.42 },
+      // 底部文案
+      { type: 'text', x: 0.0997, y: 0.8621, width: 0.6, height: 0.0952, placeholder: 'This is our story, told not in perfect words, but in honest moments, captured one photo at a time.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-one-bottom-text',
+    name: '1.4',
+    category: '一图',
+    styleId: 'atmosphere',
+    description: '上方大图铺满+底部手写体memonts大字标题，极简文艺',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 1, height: 0.7971, cropHint: 'cover' },
+      { type: 'text', x: 0.1993, y: 0.8545, width: 0.6, height: 0.0952, placeholder: 'memonts', fixed: true, fontSizeRatio: 0.1239, textAlign: 'center', fontWeight: 'bold', color: '#2c2c2c', lineHeight: 1.5, fontFamily: '"Great Vibes", cursive' },
+    ],
+  },
+  {
+    id: 'atm-one-top-text-bottom',
+    name: '1.5',
+    category: '一图',
+    styleId: 'atmosphere',
+    description: '上方右对齐正文+下方大图，上文字下图留白式排版',
+    thumbnail: '',
+    elements: [
+      { type: 'text', x: 0.2762, y: 0.105, width: 0.6587, height: 0.0952, placeholder: 'Life moves fast, but in these pages, we can slow it down, hold on a little longer, and remember how it felt to be here.', fixed: true, fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.0645, y: 0.5138, width: 0.8704, height: 0.4339, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'atm-one-film-center',
+    name: '1.6',
+    category: '一图',
+    styleId: 'atmosphere',
+    description: '中间胶卷横图+右上camera film标题+下方正文，复古胶卷感',
+    thumbnail: '',
+    elements: [
+      { type: 'text', x: 0.4354, y: 0.2024, width: 0.4146, height: 0.0564, placeholder: 'camera film', fixed: true, fontSizeRatio: 0.0715, textAlign: 'right', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'image', x: 0.15, y: 0.2915, width: 0.7, height: 0.3947, cropHint: 'cover', filmEdge: true },
+      { type: 'text', x: 0.15, y: 0.7478, width: 0.6973, height: 0.0952, placeholder: 'Life moves fast, but in these pages, we can slow it down, hold on a little longer, and remember how it felt to be here.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-one-center-hashtag',
+    name: '1.7',
+    category: '一图',
+    styleId: 'atmosphere',
+    description: '中间大图居中+左上#adventures+右下#here is to good times.标签',
+    thumbnail: '',
+    elements: [
+      { type: 'text', x: 0.1181, y: 0.1681, width: 0.3673, height: 0.0418, placeholder: '#adventures', fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.1777, y: 0.2241, width: 0.6608, height: 0.5288, cropHint: 'cover' },
+      { type: 'text', x: 0.4716, y: 0.7987, width: 0.4298, height: 0.0432, placeholder: '#here is to good times.', fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
   // ============ 多图拼贴 ============
   {
     id: 'two-images-stack',
@@ -510,6 +620,79 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'text', x: 0.6452, y: 0.6833, width: 0.2678, height: 0.0543, placeholder: 'Fragments', fixed: true, fontSizeRatio: 0.0477, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
       // 底部标题 Forever memories.（固定内容，居中加粗）
       { type: 'text', x: 0.2242, y: 0.8715, width: 0.6, height: 0.0645, placeholder: 'Forever memories.', fixed: true, fontSizeRatio: 0.0548, textAlign: 'center', fontWeight: 'bold', color: '#2c2c2c', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-three-left-big',
+    name: '3.2',
+    category: '三图',
+    styleId: 'atmosphere',
+    description: '左侧竖版大图占满高度，右侧上下两张小图错落叠放，杂志拼贴感',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 0.7, height: 1, cropHint: 'cover' },
+      { type: 'image', x: 0.6097, y: 0.1149, width: 0.2988, height: 0.2417, cropHint: 'cover', rotation: -13.85, cardEdge: true },
+      { type: 'image', x: 0.5837, y: 0.3198, width: 0.2748, height: 0.2321, cropHint: 'cover', cardEdge: true },
+    ],
+  },
+  {
+    id: 'atm-three-row-labels',
+    name: '3.3',
+    category: '三图',
+    styleId: 'atmosphere',
+    description: '三张横图等距横排居中，每张上方配标签文字，简约整齐',
+    thumbnail: '',
+    elements: [
+      { type: 'text', x: 0.0561, y: 0.3191, width: 0.276, height: 0.037, placeholder: '#Memories', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.355, y: 0.3212, width: 0.3052, height: 0.0328, placeholder: '#Snapshots', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.6601, y: 0.3212, width: 0.2095, height: 0.0296, placeholder: '#Treasures', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.0561, y: 0.3561, width: 0.2838, height: 0.2335, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'image', x: 0.3581, y: 0.3561, width: 0.2838, height: 0.2351, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'image', x: 0.6601, y: 0.3561, width: 0.2838, height: 0.2359, cropHint: 'cover', borderWidth: 0.5 },
+    ],
+  },
+  {
+    id: 'atm-three-vertical-center',
+    name: '3.4',
+    category: '三图',
+    styleId: 'atmosphere',
+    description: '三张横图垂直居中排列，等宽等高，0.5mm黑边，极简竖列',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.3142, y: 0.1368, width: 0.3378, height: 0.2143, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'image', x: 0.3142, y: 0.3776, width: 0.3378, height: 0.2143, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'image', x: 0.3142, y: 0.6184, width: 0.3378, height: 0.2143, cropHint: 'cover', borderWidth: 0.5 },
+    ],
+  },
+  {
+    id: 'atm-three-stamp-right',
+    name: '3.5',
+    category: '三图',
+    styleId: 'atmosphere',
+    description: '左上邮票小图+右侧大标题+中间大图+底部小横图，杂志错落感',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.1118, y: 0.094, width: 0.2712, height: 0.2124, cropHint: 'cover', stampEdge: true },
+      { type: 'text', x: 0.4789, y: 0.2002, width: 0.4333, height: 0.0623, placeholder: 'Chill time', fixed: true, fontSizeRatio: 0.0763, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'text', x: 0.5446, y: 0.2817, width: 0.4013, height: 0.0494, placeholder: 'These days were golden.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.5446, y: 0.3311, width: 0.4397, height: 0.0952, placeholder: 'Moments worth keeping forever.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.3146, y: 0.4524, width: 0.6314, height: 0.2753, cropHint: 'cover' },
+      { type: 'image', x: 0.1118, y: 0.7682, width: 0.5184, height: 0.1868, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'atm-three-top-two-bottom',
+    name: '3.6',
+    category: '三图',
+    styleId: 'atmosphere',
+    description: '上方两张小横图并排+中间标题正文+底部右张大图，日记排版',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.0552, y: 0.0497, width: 0.2703, height: 0.2322, cropHint: 'cover' },
+      { type: 'image', x: 0.3412, y: 0.0497, width: 0.2703, height: 0.2322, cropHint: 'cover' },
+      { type: 'text', x: 0.1903, y: 0.3976, width: 0.3769, height: 0.0952, placeholder: 'Life lately', fixed: true, fontSizeRatio: 0.0763, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c', lineHeight: 1.5 },
+      { type: 'text', x: 0.1903, y: 0.4692, width: 0.6523, height: 0.0952, placeholder: 'Some days are ordinary while they\u2019re happening, but when you look back, you realize they were the best ones.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.301, y: 0.6538, width: 0.6172, height: 0.3212, cropHint: 'cover' },
     ],
   },
   {
@@ -679,6 +862,177 @@ export const TEMPLATES: TemplateDefinition[] = [
     ],
   },
   {
+    id: 'atm-two-collage',
+    name: '2.1',
+    category: '二图',
+    styleId: 'atmosphere',
+    description: '左上图+右下长图错落排列，配英文装饰字和大号DATA TIME文字，杂志拼贴感',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.0752, y: 0.1012, width: 0.4158, height: 0.3064, cropHint: 'cover' },
+      { type: 'image', x: 0.2279, y: 0.6457, width: 0.7, height: 0.3, cropHint: 'cover' },
+      { type: 'text', x: 0.5615, y: 0.1972, width: 0.2985, height: 0.0952, placeholder: '#here is to good times', fixed: true, fontSizeRatio: 0.0381, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.2279, y: 0.6164, width: 0.6, height: 0.0294, placeholder: '#memories worth keeping.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.4764, y: 0.4524, width: 0.3836, height: 0.0952, placeholder: 'CHILL TIME', fixed: true, fontSizeRatio: 0.0906, textAlign: 'left', fontWeight: 500, color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-two-stagger',
+    name: '2.2',
+    category: '二图',
+    styleId: 'atmosphere',
+    description: '两张横图左右错落叠放，配#have a good time装饰文字，杂志拼贴感',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.0743, y: 0.1534, width: 0.6955, height: 0.3, cropHint: 'cover', borderWidth: 0.5, borderColor: '#000000' },
+      { type: 'image', x: 0.208, y: 0.4952, width: 0.7, height: 0.3, cropHint: 'cover', borderWidth: 0.5, borderColor: '#000000' },
+      { type: 'text', x: 0.3976, y: 0.1103, width: 0.4524, height: 0.0238, placeholder: '#here is to good times', fixed: true, fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.15, y: 0.8162, width: 0.3258, height: 0.0358, placeholder: 'Collecting moments,\none frame at a time.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-two-diagonal',
+    name: '2.3',
+    category: '二图',
+    styleId: 'atmosphere',
+    description: '两张横图对角错落排列，上方大号HAVEAGOODTIME标题，下方装饰文字',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.1068, y: 0.283, width: 0.5193, height: 0.1889, cropHint: 'cover', borderWidth: 0.5, borderColor: '#000000' },
+      { type: 'image', x: 0.3733, y: 0.5009, width: 0.5057, height: 0.1807, cropHint: 'cover', borderWidth: 0.5, borderColor: '#000000' },
+      { type: 'text', x: 0.2678, y: 0.1557, width: 0.4644, height: 0.0952, placeholder: 'HAVEAGOODTIME', fixed: true, fontSizeRatio: 0.0667, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c', lineHeight: 1.5 },
+      { type: 'text', x: 0.3173, y: 0.7698, width: 0.3543, height: 0.0952, placeholder: 'Relaxing moments', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-two-top-bottom',
+    name: '2.4',
+    category: '二图',
+    styleId: 'atmosphere',
+    description: '上方大图+中间居中文案+右下角小图，简约文艺',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.0923, y: 0.0922, width: 0.793, height: 0.3, cropHint: 'cover' },
+      { type: 'image', x: 0.3756, y: 0.704, width: 0.5424, height: 0.2371, cropHint: 'cover' },
+      { type: 'text', x: 0.2, y: 0.5158, width: 0.6, height: 0.0952, placeholder: 'May these pages always remind us that even the smallest moments can become the warmest memories.', fixed: true, fontSizeRatio: 0.031, textAlign: 'center', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-two-letters-card',
+    name: '2.5',
+    category: '二图',
+    styleId: 'atmosphere',
+    description: '米黄背景+散落字母A-N+两张卡片选区照片错落叠放，Keepsakes标题',
+    thumbnail: '',
+    background: '#fef3c7',
+    elements: [
+      // 散落字母（左上到右下斜向）
+      { type: 'text', x: 0.0676, y: 0.0476, width: 0.0541, height: 0.0381, placeholder: 'A', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -15 },
+      { type: 'text', x: 0.1689, y: 0.0952, width: 0.0541, height: 0.0381, placeholder: 'B', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 20 },
+      { type: 'text', x: 0.1014, y: 0.1667, width: 0.0541, height: 0.0381, placeholder: 'C', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -25 },
+      { type: 'text', x: 0.2365, y: 0.1905, width: 0.0541, height: 0.0381, placeholder: 'D', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 10 },
+      { type: 'text', x: 0.1351, y: 0.2619, width: 0.0541, height: 0.0381, placeholder: 'E', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -20 },
+      { type: 'text', x: 0.3041, y: 0.2857, width: 0.0541, height: 0.0381, placeholder: 'F', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 15 },
+      { type: 'text', x: 0.2027, y: 0.3571, width: 0.0541, height: 0.0381, placeholder: 'G', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -10 },
+      { type: 'text', x: 0.3716, y: 0.381, width: 0.0541, height: 0.0381, placeholder: 'H', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 25 },
+      { type: 'text', x: 0.2703, y: 0.4524, width: 0.0541, height: 0.0381, placeholder: 'I', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -15 },
+      { type: 'text', x: 0.4392, y: 0.4762, width: 0.0541, height: 0.0381, placeholder: 'J', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 20 },
+      { type: 'text', x: 0.3378, y: 0.5476, width: 0.0541, height: 0.0381, placeholder: 'K', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -20 },
+      { type: 'text', x: 0.5068, y: 0.5714, width: 0.0541, height: 0.0381, placeholder: 'L', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 10 },
+      { type: 'text', x: 0.4054, y: 0.6429, width: 0.0541, height: 0.0381, placeholder: 'M', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -25 },
+      { type: 'text', x: 0.5743, y: 0.6667, width: 0.0541, height: 0.0381, placeholder: 'N', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 15 },
+      { type: 'text', x: 0.473, y: 0.7381, width: 0.0541, height: 0.0381, placeholder: 'O', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -10 },
+      { type: 'text', x: 0.6419, y: 0.7619, width: 0.0541, height: 0.0381, placeholder: 'P', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 20 },
+      { type: 'text', x: 0.5405, y: 0.8333, width: 0.0541, height: 0.0381, placeholder: 'Q', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -15 },
+      { type: 'text', x: 0.7095, y: 0.8571, width: 0.0541, height: 0.0381, placeholder: 'R', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 25 },
+      { type: 'text', x: 0.6081, y: 0.9048, width: 0.0541, height: 0.0381, placeholder: 'S', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -20 },
+      { type: 'text', x: 0.777, y: 0.9286, width: 0.0541, height: 0.0381, placeholder: 'T', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 10 },
+      { type: 'text', x: 0.1216, y: 0.0714, width: 0.0541, height: 0.0381, placeholder: 'U', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 10 },
+      { type: 'text', x: 0.2162, y: 0.1333, width: 0.0541, height: 0.0381, placeholder: 'V', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -15 },
+      { type: 'text', x: 0.1486, y: 0.2, width: 0.0541, height: 0.0381, placeholder: 'W', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 20 },
+      { type: 'text', x: 0.2838, y: 0.2381, width: 0.0541, height: 0.0381, placeholder: 'X', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -10 },
+      { type: 'text', x: 0.1892, y: 0.3095, width: 0.0541, height: 0.0381, placeholder: 'Y', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 15 },
+      { type: 'text', x: 0.3514, y: 0.3333, width: 0.0541, height: 0.0381, placeholder: 'Z', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -20 },
+      { type: 'text', x: 0.2568, y: 0.4048, width: 0.0541, height: 0.0381, placeholder: 'A', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 25 },
+      { type: 'text', x: 0.4189, y: 0.4286, width: 0.0541, height: 0.0381, placeholder: 'B', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -15 },
+      { type: 'text', x: 0.3243, y: 0.5, width: 0.0541, height: 0.0381, placeholder: 'C', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 10 },
+      { type: 'text', x: 0.4865, y: 0.5238, width: 0.0541, height: 0.0381, placeholder: 'D', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -25 },
+      { type: 'text', x: 0.3919, y: 0.5952, width: 0.0541, height: 0.0381, placeholder: 'E', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 20 },
+      { type: 'text', x: 0.5541, y: 0.619, width: 0.0541, height: 0.0381, placeholder: 'F', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -10 },
+      { type: 'text', x: 0.4595, y: 0.6905, width: 0.0541, height: 0.0381, placeholder: 'G', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 15 },
+      { type: 'text', x: 0.6216, y: 0.7143, width: 0.0541, height: 0.0381, placeholder: 'H', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -20 },
+      { type: 'text', x: 0.527, y: 0.7857, width: 0.0541, height: 0.0381, placeholder: 'I', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 25 },
+      { type: 'text', x: 0.6892, y: 0.8095, width: 0.0541, height: 0.0381, placeholder: 'J', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -15 },
+      { type: 'text', x: 0.5946, y: 0.8667, width: 0.0541, height: 0.0381, placeholder: 'K', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 10 },
+      { type: 'text', x: 0.7297, y: 0.8952, width: 0.0541, height: 0.0381, placeholder: 'L', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -25 },
+      { type: 'text', x: 0.6622, y: 0.9429, width: 0.0541, height: 0.0381, placeholder: 'M', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: 20 },
+      { type: 'text', x: 0.8108, y: 0.9524, width: 0.0541, height: 0.0381, placeholder: 'N', fixed: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', lineHeight: 1.5, rotation: -10 },
+      // 右上标题
+      { type: 'text', x: 0.5152, y: 0.0857, width: 0.3209, height: 0.0533, placeholder: 'Keepsakes', fixed: true, fontSizeRatio: 0.0524, textAlign: 'left', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'text', x: 0.5675, y: 0.1524, width: 0.3236, height: 0.0698, placeholder: '#Collecting moments, one frame at a time.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      // 两张卡片选区照片
+      { type: 'image', x: 0.1397, y: 0.3133, width: 0.4819, height: 0.2343, cropHint: 'cover', cardEdge: true, rotation: -13.47 },
+      { type: 'image', x: 0.419, y: 0.4667, width: 0.4623, height: 0.2533, cropHint: 'cover', cardEdge: true },
+      // 左下角小字
+      { type: 'text', x: 0.0798, y: 0.7857, width: 0.3134, height: 0.0415, placeholder: '#ancdefg', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-two-bottom-side',
+    name: '2.6',
+    category: '二图',
+    styleId: 'atmosphere',
+    description: '上方大标题+正文留白+底部两张竖图并排，简约日记感',
+    thumbnail: '',
+    elements: [
+      { type: 'text', x: 0.2919, y: 0.1298, width: 0.6, height: 0.0692, placeholder: 'Life lately', fixed: true, fontSizeRatio: 0.0715, textAlign: 'right', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'text', x: 0.2488, y: 0.2204, width: 0.6431, height: 0.0952, placeholder: 'Some days are ordinary while they\u2019re happening, but when you look back, you realize they were the best ones.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.0455, y: 0.6642, width: 0.3292, height: 0.2895, cropHint: 'cover' },
+      { type: 'image', x: 0.3997, y: 0.6642, width: 0.3412, height: 0.2895, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'atm-two-equal',
+    name: '2.7',
+    category: '二图',
+    styleId: 'atmosphere',
+    description: '两张竖图等宽并排，上下留边，极简双拼',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0, y: 0.1447, width: 0.4036, height: 0.7106, cropHint: 'cover' },
+      { type: 'image', x: 0.4172, y: 0.1447, width: 0.4237, height: 0.7124, cropHint: 'cover' },
+    ],
+  },
+  {
+    id: 'atm-two-stamp-bottom',
+    name: '2.8',
+    category: '二图',
+    styleId: 'atmosphere',
+    description: '右上角邮票小图+底部满宽大图+左上LIFE LATELY标题+引言',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.5558, y: 0.0931, width: 0.3228, height: 0.2802, cropHint: 'cover', stampEdge: true },
+      { type: 'image', x: 0, y: 0.4347, width: 1, height: 0.5653, cropHint: 'cover' },
+      { type: 'text', x: 0.1114, y: 0.1745, width: 0.4307, height: 0.0507, placeholder: 'LIFELATELY', fixed: true, fontSizeRatio: 0.0524, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c', lineHeight: 1.5 },
+      { type: 'text', x: 0.175, y: 0.2332, width: 0.3194, height: 0.0672, placeholder: '"These days were golden."', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-two-dark',
+    name: '2.9',
+    category: '二图',
+    styleId: 'atmosphere',
+    description: '深色背景#1a1a1a，上下两张居中横图+白色标题正文，暗黑电影感',
+    thumbnail: '',
+    background: '#1a1a1a',
+    elements: [
+      { type: 'text', x: 0.2, y: 0.1462, width: 0.6, height: 0.0592, placeholder: 'Relaxing moments', fixed: true, fontSizeRatio: 0.0715, textAlign: 'center', fontWeight: 'bold', color: '#ffffff', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'image', x: 0.1352, y: 0.2151, width: 0.7297, height: 0.2618, cropHint: 'cover' },
+      { type: 'image', x: 0.1352, y: 0.4956, width: 0.7297, height: 0.2666, cropHint: 'cover' },
+      { type: 'text', x: 0.1528, y: 0.8022, width: 0.695, height: 0.0952, placeholder: 'Every frame holds a story, every smile holds a memory, and every page reminds us that good days are worth collecting.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#ffffff', lineHeight: 1.5 },
+    ],
+  },
+  {
     id: 'five-collage',
     name: '五图拼贴',
     category: '五图',
@@ -794,6 +1148,91 @@ export const TEMPLATES: TemplateDefinition[] = [
     ],
   },
   {
+    id: 'atm-six-staircase',
+    name: '6.2',
+    category: '六图',
+    styleId: 'atmosphere',
+    description: '六张小图阶梯式向右下排列+左下Relaxing moments标题+底部正文',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.1754, y: 0.1642, width: 0.2297, height: 0.1619, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'image', x: 0.4329, y: 0.1642, width: 0.2297, height: 0.1619, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'image', x: 0.6894, y: 0.1642, width: 0.2297, height: 0.1619, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'image', x: 0.4329, y: 0.3615, width: 0.2297, height: 0.1619, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'image', x: 0.6894, y: 0.3615, width: 0.2297, height: 0.1619, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'image', x: 0.6894, y: 0.5595, width: 0.2297, height: 0.1619, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'text', x: 0.104, y: 0.7387, width: 0.4582, height: 0.0593, placeholder: 'Relaxing moments', fixed: true, fontSizeRatio: 0.0548, textAlign: 'left', fontWeight: 'bold', color: '#2c2c2c', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'text', x: 0.1041, y: 0.7981, width: 0.6, height: 0.0952, placeholder: 'May these pages always remind us that even the smallest moments can become the warmest memories.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-seven-collage',
+    name: '7.1',
+    category: '七图',
+    styleId: 'atmosphere',
+    description: '七张照片错落拼贴，左上Adventures标题+右下Fragments标题+底部引言，杂志感',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.15, y: 0.2499, width: 0.3513, height: 0.1535, cropHint: 'cover' },
+      { type: 'image', x: 0.527, y: 0.149, width: 0.2907, height: 0.2543, cropHint: 'cover' },
+      { type: 'image', x: 0.0777, y: 0.4204, width: 0.1946, height: 0.1313, cropHint: 'cover' },
+      { type: 'image', x: 0.2901, y: 0.4127, width: 0.2112, height: 0.1465, cropHint: 'cover' },
+      { type: 'image', x: 0.5306, y: 0.4127, width: 0.2872, height: 0.2077, cropHint: 'cover' },
+      { type: 'image', x: 0.2143, y: 0.569, width: 0.287, height: 0.2401, cropHint: 'cover' },
+      { type: 'image', x: 0.5289, y: 0.6305, width: 0.2905, height: 0.1265, cropHint: 'cover' },
+      { type: 'text', x: 0.1589, y: 0.1467, width: 0.2623, height: 0.0533, placeholder: 'Adventures', fixed: true, fontSizeRatio: 0.0548, textAlign: 'left', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'text', x: 0.5467, y: 0.814, width: 0.2612, height: 0.0952, placeholder: 'Fragments', fixed: true, fontSizeRatio: 0.0548, textAlign: 'right', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'text', x: 0.175, y: 0.8905, width: 0.6, height: 0.0952, placeholder: '"Collecting moments, one frame at a time."', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-seven-arc',
+    name: '7.2',
+    category: '七图',
+    styleId: 'atmosphere',
+    description: '白色卡片居中，7张照片沿弧形围绕排列，左侧手写斜向装饰文字',
+    thumbnail: '',
+    background: '#fef3c7',
+    elements: [
+      // 中间时钟
+      { type: 'shape', x: 0.2244, y: 0.2944, width: 0.5541, height: 0.3929, backgroundColor: '#ffffff', clockStyle: true },
+      // 七张照片沿弧形排列
+      { type: 'image', x: 0.4041, y: 0.1151, width: 0.1702, height: 0.1421, cropHint: 'cover' },
+      { type: 'image', x: 0.6187, y: 0.1896, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.7533, y: 0.3165, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.8176, y: 0.4525, width: 0.1382, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.7673, y: 0.5884, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.6047, y: 0.6988, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.4041, y: 0.7512, width: 0.1703, height: 0.1419, cropHint: 'cover' },
+      // 左侧斜向装饰文字
+      { type: 'text', x: 0.1087, y: 0.3689, width: 0.1157, height: 0.0238, placeholder: 'ZZZ...', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif', rotation: 16.33 },
+      { type: 'text', x: 0.0888, y: 0.424, width: 0.1274, height: 0.057, placeholder: 'ZZZ...', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.0865, y: 0.495, width: 0.1379, height: 0.0509, placeholder: 'ZZZ...', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5, rotation: -5.6 },
+      { type: 'text', x: 0.1087, y: 0.5573, width: 0.1315, height: 0.048, placeholder: 'ZZZ...', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5, rotation: -16.87 },
+      { type: 'text', x: 0.1452, y: 0.6053, width: 0.19, height: 0.0354, placeholder: 'ZZZ...', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5, rotation: -36.21 },
+    ],
+  },
+  {
+    id: 'atm-eight-mosaic',
+    name: '8.1',
+    category: '八图',
+    styleId: 'atmosphere',
+    description: '八张小图错落拼贴成散点网格，右上和左下各配文字',
+    thumbnail: '',
+    elements: [
+      { type: 'text', x: 0.3003, y: 0.0957, width: 0.6, height: 0.0593, placeholder: 'Relaxing moments', fixed: true, fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.0678, y: 0.2314, width: 0.2013, height: 0.1324, cropHint: 'cover' },
+      { type: 'image', x: 0.4948, y: 0.2314, width: 0.211, height: 0.1346, cropHint: 'cover' },
+      { type: 'image', x: 0.2667, y: 0.366, width: 0.2082, height: 0.1433, cropHint: 'cover' },
+      { type: 'image', x: 0.7328, y: 0.366, width: 0.1973, height: 0.1319, cropHint: 'cover' },
+      { type: 'image', x: 0.0678, y: 0.5275, width: 0.1989, height: 0.1359, cropHint: 'cover' },
+      { type: 'image', x: 0.4948, y: 0.5167, width: 0.2225, height: 0.1396, cropHint: 'cover' },
+      { type: 'image', x: 0.2691, y: 0.6764, width: 0.223, height: 0.1317, cropHint: 'cover' },
+      { type: 'image', x: 0.7173, y: 0.6764, width: 0.2183, height: 0.1297, cropHint: 'cover' },
+      { type: 'text', x: 0.0678, y: 0.898, width: 0.3422, height: 0.0554, placeholder: 'Here\u2019s to the memories.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
     id: 'atm-five-banner-diary',
     name: '5.1',
     category: '五图',
@@ -803,9 +1242,9 @@ export const TEMPLATES: TemplateDefinition[] = [
     blackType: 2,
     elements: [
       // 顶部横幅大图
-      { type: 'image', x: 0, y: 0, width: 0.9987, height: 0.3679, cropHint: 'cover' },
+      { type: 'image', x: 0, y: 0, width: 0.9987, height: 0.4452, cropHint: 'cover' },
       // 右侧中间小图
-      { type: 'image', x: 0.7133, y: 0.3361, width: 0.1991, height: 0.1407, cropHint: 'cover', borderWidth: 1, borderColor: '#e9dddd' },
+      { type: 'image', x: 0.7133, y: 0.4086, width: 0.1991, height: 0.1407, cropHint: 'cover', borderWidth: 1, borderColor: '#e9dddd' },
       // 底部左小图
       { type: 'image', x: 0.2559, y: 0.6429, width: 0.2027, height: 0.1429, cropHint: 'cover', borderWidth: 0.5, borderColor: '#666666' },
       // 底部中小图
@@ -814,6 +1253,120 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'image', x: 0.7097, y: 0.6429, width: 0.2027, height: 0.1429, cropHint: 'cover', borderWidth: 0.5, borderColor: '#666666' },
       // 日期文字（右对齐，固定装饰文字）
       { type: 'text', x: 0.0516, y: 0.6767, width: 0.1635, height: 0.0752, placeholder: '2026年3月12日\n地点', fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-five-timeline',
+    name: '5.2',
+    category: '五图',
+    description: '竖向时间轴，5个节点，卡片照片交替左右+时间文字交替排列，旅行记录感',
+    thumbnail: '',
+    styleId: 'atmosphere',
+    background: '#f5f0e8',
+    elements: [
+      // 竖向时间轴（中间竖线+5个节点圆点，固定不可拖拽）
+      {
+        type: 'shape', x: 0.49, y: 0, width: 0.02, height: 1,
+        backgroundColor: 'transparent',
+        timeline: true,
+        timelineColor: '#b8a88a',
+        timelineWidth: 0.5,
+        timelineNodes: 5,
+        fixed: true,
+      },
+      // 照片1（右上）
+      { type: 'image', x: 0.1316, y: 0.079, width: 0.2387, height: 0.18, cropHint: 'cover', cardEdge: true, rotation: 7.22 },
+      // 照片2（右下）
+      { type: 'image', x: 0.5541, y: 0.2441, width: 0.3025, height: 0.1736, cropHint: 'cover', cardEdge: true, rotation: -5.27 },
+      // 照片3（左侧）
+      { type: 'image', x: 0.1288, y: 0.3832, width: 0.2415, height: 0.1838, cropHint: 'cover', cardEdge: true },
+      // 照片4（右侧）
+      { type: 'image', x: 0.5791, y: 0.5792, width: 0.304, height: 0.1725, cropHint: 'cover', cardEdge: true, rotation: 8.49 },
+      // 照片5（左下）
+      { type: 'image', x: 0.1316, y: 0.7517, width: 0.2302, height: 0.166, cropHint: 'cover', cardEdge: true, rotation: 9.12 },
+      // 时间文字1（右侧左对齐）
+      { type: 'text', x: 0.5541, y: 0.1333, width: 0.3716, height: 0.0714, placeholder: '09:30\n抵达入口', fixed: true, fontSizeRatio: 0.0477, textAlign: 'left', fontWeight: 500, color: '#b8a88a', lineHeight: 1.4, fontFamily: '"Great Vibes", cursive' },
+      // 时间文字2（左侧右对齐）
+      { type: 'text', x: 0.0651, y: 0.2952, width: 0.3716, height: 0.0714, placeholder: '10:20\n走过草坪', fixed: true, fontSizeRatio: 0.0477, textAlign: 'right', fontWeight: 500, color: '#b8a88a', lineHeight: 1.4, fontFamily: '"Great Vibes", cursive' },
+      // 时间文字3（右侧左对齐）
+      { type: 'text', x: 0.5791, y: 0.4639, width: 0.3716, height: 0.0714, placeholder: '11:15\n停留水边', fixed: true, fontSizeRatio: 0.0477, textAlign: 'left', fontWeight: 500, color: '#b8a88a', lineHeight: 1.4, fontFamily: '"Great Vibes", cursive' },
+      // 时间文字4（左侧右对齐）
+      { type: 'text', x: 0.0651, y: 0.619, width: 0.3716, height: 0.0714, placeholder: '13:40\n庭院小憩', fixed: true, fontSizeRatio: 0.0477, textAlign: 'right', fontWeight: 500, color: '#b8a88a', lineHeight: 1.4, fontFamily: '"Great Vibes", cursive' },
+      // 时间文字5（右侧左对齐）
+      { type: 'text', x: 0.5541, y: 0.781, width: 0.3716, height: 0.0714, placeholder: '14:00\n黄昏花墙', fixed: true, fontSizeRatio: 0.0477, textAlign: 'left', fontWeight: 500, color: '#b8a88a', lineHeight: 1.4, fontFamily: '"Great Vibes", cursive' },
+    ],
+  },
+  {
+    id: 'atm-five-film',
+    name: '5.3',
+    category: '五图',
+    styleId: 'atmosphere',
+    description: '胶卷风格五图，上方两张横排+下方三张阶梯错落倾斜排列，配camera film标题',
+    thumbnail: '',
+    background: '#913100',
+    elements: [
+      { type: 'image', x: 0, y: 0.249, width: 0.3967, height: 0.1667, cropHint: 'cover', filmEdge: true },
+      { type: 'image', x: 0.3967, y: 0.249, width: 0.368, height: 0.1667, cropHint: 'cover', filmEdge: true },
+      { type: 'image', x: -0.0304, y: 0.5013, width: 0.3627, height: 0.1681, cropHint: 'cover', filmEdge: true, rotation: -12 },
+      { type: 'image', x: 0.3243, y: 0.4489, width: 0.3581, height: 0.1681, cropHint: 'cover', filmEdge: true, rotation: -12 },
+      { type: 'image', x: 0.6723, y: 0.3948, width: 0.3649, height: 0.1681, cropHint: 'cover', filmEdge: true, rotation: -12 },
+      { type: 'text', x: 0.3318, y: 0.1199, width: 0.6, height: 0.0952, placeholder: 'camera film', fixed: true, fontSizeRatio: 0.0548, textAlign: 'right', fontWeight: 'bold', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.1713, y: 0.8194, width: 0.6, height: 0.0952, placeholder: 'These days were golden.', fixed: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-five-left-vertical',
+    name: '5.4',
+    category: '五图',
+    styleId: 'atmosphere',
+    description: '左侧竖版大图占满高度+右侧四张卡片小图错落叠放，米白背景',
+    thumbnail: '',
+    background: '#f5f0e8',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 0.533, height: 0.9999, cropHint: 'cover' },
+      { type: 'image', x: 0.5772, y: 0.0848, width: 0.2704, height: 0.1976, cropHint: 'cover', cardEdge: true, rotation: 11.01 },
+      { type: 'image', x: 0.5129, y: 0.2943, width: 0.2375, height: 0.1776, cropHint: 'cover', cardEdge: true, rotation: -18.92 },
+      { type: 'image', x: 0.7125, y: 0.4448, width: 0.2241, height: 0.1823, cropHint: 'cover', cardEdge: true },
+      { type: 'image', x: 0.5129, y: 0.6272, width: 0.2813, height: 0.17, cropHint: 'cover', cardEdge: true, rotation: 22.2 },
+    ],
+  },
+  {
+    id: 'atm-five-right-stack',
+    name: '5.5',
+    category: '五图',
+    styleId: 'atmosphere',
+    description: '右侧五张横图竖排+左侧Life lately大标题+编号标注，浅蓝背景',
+    thumbnail: '',
+    background: '#e3ecf8',
+    elements: [
+      { type: 'text', x: 0.118, y: 0.3405, width: 0.2879, height: 0.1456, placeholder: 'Life\nlately', fixed: true, fontSizeRatio: 0.0906, textAlign: 'center', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'image', x: 0.5765, y: 0.0324, width: 0.3716, height: 0.1714, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'text', x: 0.3254, y: 0.1634, width: 0.2172, height: 0.0502, placeholder: '(1)', fixed: true, fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.5765, y: 0.2247, width: 0.3716, height: 0.1714, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'text', x: 0.3388, y: 0.3533, width: 0.2037, height: 0.0428, placeholder: '(2)', fixed: true, fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.5765, y: 0.4133, width: 0.3716, height: 0.1714, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'text', x: 0.2417, y: 0.5508, width: 0.3009, height: 0.0278, placeholder: '(3)', fixed: true, fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.5765, y: 0.6038, width: 0.3716, height: 0.1714, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'text', x: 0.4217, y: 0.7326, width: 0.1208, height: 0.0426, placeholder: '(4)', fixed: true, fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'image', x: 0.5765, y: 0.7935, width: 0.3716, height: 0.1714, cropHint: 'cover', borderWidth: 0.5 },
+      { type: 'text', x: 0.4059, y: 0.9257, width: 0.1366, height: 0.0391, placeholder: '(5)', fixed: true, fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
+    id: 'atm-five-film-blue',
+    name: '5.6',
+    category: '五图',
+    styleId: 'atmosphere',
+    description: '上方三张胶卷横排+中间A roll of film标题+下方两张胶卷横排，浅蓝背景',
+    thumbnail: '',
+    background: '#dbeafe',
+    elements: [
+      { type: 'image', x: 0, y: 0.1715, width: 0.3581, height: 0.1949, cropHint: 'cover', filmEdge: true },
+      { type: 'image', x: 0.3574, y: 0.1714, width: 0.3378, height: 0.1948, cropHint: 'cover', filmEdge: true },
+      { type: 'image', x: 0.6926, y: 0.1715, width: 0.3074, height: 0.1948, cropHint: 'cover', filmEdge: true },
+      { type: 'text', x: 0.1932, y: 0.481, width: 0.6, height: 0.0549, placeholder: 'A roll of film', fixed: true, fontSizeRatio: 0.0524, textAlign: 'center', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'image', x: 0, y: 0.6308, width: 0.4932, height: 0.1724, cropHint: 'cover', filmEdge: true },
+      { type: 'image', x: 0.4932, y: 0.6308, width: 0.5034, height: 0.1724, cropHint: 'cover', filmEdge: true },
     ],
   },
   {
@@ -888,39 +1441,131 @@ export const TEMPLATES: TemplateDefinition[] = [
     ],
   },
   {
+    id: 'atm-four-bg-clothesline',
+    name: '4.2',
+    category: '四图',
+    styleId: 'atmosphere',
+    description: '蓝天白云晾衣架背景图，四张拍立得照片悬挂，文艺清新',
+    thumbnail: '',
+    backgroundImage: moban1Bg,
+    elements: [
+      // 第1张照片（左上拍立得）
+      { type: 'image', x: 0.1453, y: 0.3352, width: 0.1817, height: 0.1409, cropHint: 'cover', rotation: 9 },
+      // 第2张照片（右上拍立得）
+      { type: 'image', x: 0.6852, y: 0.384, width: 0.1817, height: 0.1439, cropHint: 'cover', rotation: 2.42 },
+      // 第3张照片（左下拍立得）
+      { type: 'image', x: 0.2534, y: 0.5681, width: 0.1892, height: 0.1423, cropHint: 'cover', rotation: 13 },
+      // 第4张照片（右下拍立得）
+      { type: 'image', x: 0.5878, y: 0.6505, width: 0.1885, height: 0.1329, cropHint: 'cover', rotation: -14.32 },
+    ],
+  },
+  {
+    id: 'atm-four-full-stack',
+    name: '4.3',
+    category: '四图',
+    styleId: 'atmosphere',
+    description: '一张满版背景图+左侧三张卡片小图错落叠放，悬浮拼贴感',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0, y: 0, width: 1, height: 1, cropHint: 'cover' },
+      { type: 'image', x: 0.1027, y: 0.1438, width: 0.3527, height: 0.1873, cropHint: 'cover', cardEdge: true, rotation: -4.05 },
+      { type: 'image', x: 0.1027, y: 0.3557, width: 0.3584, height: 0.181, cropHint: 'cover', cardEdge: true, rotation: 8.43 },
+      { type: 'image', x: 0.0899, y: 0.5536, width: 0.3655, height: 0.1779, cropHint: 'cover', cardEdge: true, rotation: -7.19 },
+    ],
+  },
+  {
+    id: 'atm-four-milestones',
+    name: '4.4',
+    category: '四图',
+    styleId: 'atmosphere',
+    description: '四张大小不一的横图错落拼贴+多处英文标题装饰，杂志拼贴感',
+    thumbnail: '',
+    elements: [
+      { type: 'text', x: 0.6963, y: 0.0302, width: 0.2574, height: 0.0319, placeholder: 'Captured moments.', fixed: true, fontSizeRatio: 0.0238, textAlign: 'right', fontWeight: 'normal', color: '#999999', lineHeight: 1.5 },
+      { type: 'image', x: 0.0864, y: 0.1076, width: 0.567, height: 0.2319, cropHint: 'cover' },
+      { type: 'text', x: 0.6847, y: 0.2018, width: 0.2276, height: 0.0435, placeholder: 'Milestones', fixed: true, fontSizeRatio: 0.0429, textAlign: 'right', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'image', x: 0.3991, y: 0.3747, width: 0.4464, height: 0.1641, cropHint: 'cover' },
+      { type: 'text', x: 0.0864, y: 0.4396, width: 0.2589, height: 0.0536, placeholder: '(Fragments)', fixed: true, fontSizeRatio: 0.0429, textAlign: 'left', fontWeight: 500, color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'image', x: 0.0864, y: 0.578, width: 0.3838, height: 0.1521, cropHint: 'cover' },
+      { type: 'text', x: 0.5457, y: 0.6337, width: 0.2794, height: 0.0408, placeholder: '"Memories"', fixed: true, fontSizeRatio: 0.0429, textAlign: 'left', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'image', x: 0.5444, y: 0.7301, width: 0.2806, height: 0.1215, cropHint: 'cover' },
+      { type: 'text', x: 0.0864, y: 0.7909, width: 0.3613, height: 0.0952, placeholder: '#Keepsakes', fixed: true, fontSizeRatio: 0.0429, textAlign: 'center', fontWeight: 500, color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.0412, y: 0.9537, width: 0.1997, height: 0.0238, placeholder: 'Cherished times.', fixed: true, fontSizeRatio: 0.0238, textAlign: 'left', fontWeight: 500, color: '#999999', lineHeight: 1.5, fontFamily: '"Playfair Display", serif' },
+    ],
+  },
+  {
+    id: 'atm-four-stamp-grid',
+    name: '4.5',
+    category: '四图',
+    styleId: 'atmosphere',
+    description: '四张邮票边缘照片2×2排列，左上和右下各配一行小字',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.1567, y: 0.2333, width: 0.3378, height: 0.2476, cropHint: 'cover', stampEdge: true },
+      { type: 'image', x: 0.4945, y: 0.2333, width: 0.3378, height: 0.2476, cropHint: 'cover', stampEdge: true },
+      { type: 'image', x: 0.1567, y: 0.481, width: 0.3378, height: 0.2476, cropHint: 'cover', stampEdge: true },
+      { type: 'image', x: 0.4945, y: 0.481, width: 0.3378, height: 0.2476, cropHint: 'cover', stampEdge: true },
+      { type: 'text', x: 0.3256, y: 0.8601, width: 0.3455, height: 0.0664, placeholder: 'Relaxing moments', fontSizeRatio: 0.0429, textAlign: 'center', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      // 右上角L形装饰线 ┘
+      { type: 'shape', x: 0.6826, y: 0.2071, width: 0.19, height: 0.15, backgroundColor: 'transparent', doodleLine: true, doodleColor: '#333333', doodleWidth: 0.5, doodlePath: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
+      // 左下角L形装饰线 └
+      { type: 'shape', x: 0.1163, y: 0.6599, width: 0.27, height: 0.1, backgroundColor: 'transparent', doodleLine: true, doodleColor: '#333333', doodleWidth: 0.5, doodlePath: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }] },
+    ],
+  },
+  {
+    id: 'atm-four-fragments',
+    name: '4.6',
+    category: '四图',
+    styleId: 'atmosphere',
+    description: '左侧两张小图竖排+右上一张小图+右下一张大图错落，四处小标签文字',
+    thumbnail: '',
+    background: '#ffffff',
+    elements: [
+      { type: 'image', x: 0.1157, y: 0.0805, width: 0.2365, height: 0.1667, cropHint: 'cover' },
+      { type: 'image', x: 0.6348, y: 0.1907, width: 0.2703, height: 0.1905, cropHint: 'cover' },
+      { type: 'image', x: 0.1131, y: 0.3201, width: 0.2365, height: 0.1667, cropHint: 'cover' },
+      { type: 'image', x: 0.3834, y: 0.5978, width: 0.5216, height: 0.3562, cropHint: 'cover' },
+      { type: 'text', x: 0.0734, y: 0.5257, width: 0.2038, height: 0.0514, placeholder: 'Fragments', fontSizeRatio: 0.031, textAlign: 'center', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.0734, y: 0.9067, width: 0.2788, height: 0.0473, placeholder: 'Adventures', fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.3834, y: 0.2132, width: 0.1654, height: 0.0339, placeholder: 'Snapshots', fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.6442, y: 0.4034, width: 0.2358, height: 0.0439, placeholder: 'Memories', fontSizeRatio: 0.031, textAlign: 'right', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
     id: 'atm-clock-twelve',
     name: '12.1',
     category: '十二图',
     description: '手绘时钟风格，12张照片围绕时钟排列，记录每一刻美好时光',
     thumbnail: '',
     styleId: 'atmosphere',
+    background: '#fffae5',
     elements: [
       // 中心手绘时钟
-      { type: 'shape', x: 0.3, y: 0.38, width: 0.4, height: 0.24, backgroundColor: 'transparent', clockStyle: true },
+      { type: 'shape', x: 0.1838, y: 0.2572, width: 0.6325, height: 0.4546, backgroundColor: 'transparent', clockStyle: true },
       // 12点方向
-      { type: 'image', x: 0.4257, y: 0.1524, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.4257, y: 0.1316, width: 0.1486, height: 0.1256, cropHint: 'cover' },
       // 1点方向
-      { type: 'image', x: 0.6351, y: 0.1919, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.6399, y: 0.1837, width: 0.1273, height: 0.1047, cropHint: 'cover' },
       // 2点方向
-      { type: 'image', x: 0.7885, y: 0.3, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.7631, y: 0.3, width: 0.1672, height: 0.1048, cropHint: 'cover' },
       // 3点方向
-      { type: 'image', x: 0.8446, y: 0.4476, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.7885, y: 0.4476, width: 0.1486, height: 0.1048, cropHint: 'cover' },
       // 4点方向
       { type: 'image', x: 0.7885, y: 0.5952, width: 0.1486, height: 0.1048, cropHint: 'cover' },
       // 5点方向
-      { type: 'image', x: 0.6351, y: 0.7033, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.6145, y: 0.7033, width: 0.1486, height: 0.1048, cropHint: 'cover' },
       // 6点方向
-      { type: 'image', x: 0.4257, y: 0.7429, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.4257, y: 0.7429, width: 0.1486, height: 0.1254, cropHint: 'cover' },
       // 7点方向
-      { type: 'image', x: 0.2162, y: 0.7033, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.2502, y: 0.7033, width: 0.1486, height: 0.1048, cropHint: 'cover' },
       // 8点方向
-      { type: 'image', x: 0.0628, y: 0.5952, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.083, y: 0.5952, width: 0.1486, height: 0.1048, cropHint: 'cover' },
       // 9点方向
-      { type: 'image', x: 0.0068, y: 0.4476, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.0628, y: 0.468, width: 0.1486, height: 0.0844, cropHint: 'cover' },
       // 10点方向
-      { type: 'image', x: 0.0628, y: 0.3, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.0628, y: 0.3128, width: 0.1486, height: 0.092, cropHint: 'cover' },
       // 11点方向
-      { type: 'image', x: 0.2162, y: 0.1919, width: 0.1486, height: 0.1048, cropHint: 'cover' },
+      { type: 'image', x: 0.2114, y: 0.1837, width: 0.1486, height: 0.113, cropHint: 'cover' },
     ],
   },
 ];
@@ -941,7 +1586,7 @@ export function applyTemplate(
   themeId: string = 'travel',
   bodyFontSize: number = DEFAULT_BODY_FONT_SIZE,
   bodyColor: string = DEFAULT_BODY_COLOR
-): { elements: Element[]; doodle?: PageDoodle; background?: string } {
+): { elements: Element[]; doodle?: PageDoodle; background?: PageBackground } {
   let imageIndex = 0;
   const elements: Element[] = [];
 
@@ -981,6 +1626,7 @@ export function applyTemplate(
       opacity: tplEl.opacity ?? 1,
       zIndex: i,
       locked: tplEl.locked === true,
+      fixed: tplEl.fixed === true,
     };
 
     if (tplEl.type === 'image') {
@@ -999,6 +1645,8 @@ export function applyTemplate(
         filmRightEdge: tplEl.filmRightEdge ?? tplEl.filmSideEdge ?? true,
         // 邮票边缘效果
         stampEdge: tplEl.stampEdge === true,
+        // 卡片选区效果
+        cardEdge: tplEl.cardEdge === true,
         // 圆形选区效果
         circleEdge: tplEl.circleEdge === true,
         // 照片选区边框
@@ -1020,6 +1668,13 @@ export function applyTemplate(
         doodlePath: (tplEl as any).doodlePath ? JSON.parse(JSON.stringify((tplEl as any).doodlePath)) : undefined,
         doodleColor: (tplEl as any).doodleColor,
         doodleWidth: (tplEl as any).doodleWidth,
+        clothesline: (tplEl as any).clothesline === true,
+        clotheslineColor: (tplEl as any).clotheslineColor,
+        clotheslineWidth: (tplEl as any).clotheslineWidth,
+        timeline: (tplEl as any).timeline === true,
+        timelineColor: (tplEl as any).timelineColor,
+        timelineWidth: (tplEl as any).timelineWidth,
+        timelineNodes: (tplEl as any).timelineNodes,
       });
     } else {
       // 根据模板文案填充
@@ -1116,7 +1771,11 @@ export function applyTemplate(
     }
   }
 
-  return { elements, doodle: template.doodle ? JSON.parse(JSON.stringify(template.doodle)) : undefined, background: template.background };
+  const pageBackground = template.backgroundImage
+    ? { type: 'image' as const, value: template.backgroundImage }
+    : { type: 'color' as const, value: template.background || '#ffffff' };
+
+  return { elements, doodle: template.doodle ? JSON.parse(JSON.stringify(template.doodle)) : undefined, background: pageBackground };
 }
 
 /**
@@ -1369,7 +2028,7 @@ export function reapplyTemplateKeepingContent(
   format: BookFormat,
   page: Page,
   themeId: string = 'travel'
-): { elements: Element[]; doodle?: PageDoodle; background?: string } {
+): { elements: Element[]; doodle?: PageDoodle; background?: PageBackground } {
   const oldElements = page.elements.filter((el) => el.type === 'image' || el.type === 'text');
   const imageIds = oldElements
     .filter((el) => el.type === 'image')
@@ -1385,13 +2044,17 @@ export function reapplyTemplateKeepingContent(
     if (old?.content) (el as TextElement).content = old.content;
     textIndex++;
   }
-  return { elements: fresh, doodle, background: template.background };
+  const pageBackground2 = template.backgroundImage
+    ? { type: 'image' as const, value: template.backgroundImage }
+    : { type: 'color' as const, value: template.background || '#ffffff' };
+
+  return { elements: fresh, doodle, background: pageBackground2 };
 }
 
 /**
  * 模板分类的固定显示顺序
  */
-const CATEGORY_ORDER: TemplateDefinition['category'][] = ['封面', '尾页', '一图', '二图', '三图', '四图', '五图', '六图', '八图', '十图', '十二图', '文字封面', '我的模板'];
+const CATEGORY_ORDER: TemplateDefinition['category'][] = ['封面', '尾页', '一图', '二图', '三图', '四图', '五图', '六图', '七图', '八图', '十图', '十二图', '文字封面', '我的模板'];
 
 /**
  * 获取模板分类列表（按固定顺序排列）

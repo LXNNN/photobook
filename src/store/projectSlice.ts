@@ -158,7 +158,7 @@ export const projectSlice = createSlice({
       state.current.pages[action.payload.pageIndex].background = action.payload.background;
       state.current.updatedAt = Date.now();
     },
-    replacePageElements(state, action: PayloadAction<{ pageIndex: number; elements: Element[]; templateId?: string; doodle?: PageDoodle; background?: string }>) {
+    replacePageElements(state, action: PayloadAction<{ pageIndex: number; elements: Element[]; templateId?: string; doodle?: PageDoodle; background?: Page['background'] }>) {
       if (!state.current) return;
       const page = state.current.pages[action.payload.pageIndex];
       page.elements = action.payload.elements;
@@ -172,7 +172,7 @@ export const projectSlice = createSlice({
         delete page.doodle;
       }
       if (action.payload.background !== undefined) {
-        page.background = { type: 'color', value: action.payload.background };
+        page.background = action.payload.background;
       }
       state.current.updatedAt = Date.now();
     },
