@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { Project, Page, Element, BookFormat, ImageElement, PageDoodle } from '@/types';
+import type { Project, Page, Element, BookFormat, ImageElement, PageDoodle, AlbumStyleId } from '@/types';
 import { PRESET_FORMATS } from '@/types';
 import { isBodyText } from '@/utils/bodyText';
 import { spreadGroupAt } from '@/utils/spreadLayout';
@@ -54,7 +54,10 @@ export const projectSlice = createSlice({
     setProjectList(state, action: PayloadAction<Project[]>) {
       state.list = action.payload;
     },
-    createProject(state, action: PayloadAction<{ name: string; format?: BookFormat }>) {
+    createProject(
+      state,
+      action: PayloadAction<{ name: string; format?: BookFormat; styleId?: AlbumStyleId }>
+    ) {
       const format = action.payload.format || PRESET_FORMATS.A5;
       const now = Date.now();
       const newProject: Project = {
@@ -71,6 +74,8 @@ export const projectSlice = createSlice({
         createdAt: now,
         updatedAt: now,
         version: 1,
+        // 空白相册在新建时就定好风格，编辑器里的模板面板和右侧配置栏都按它过滤
+        styleId: action.payload.styleId,
       };
       state.current = newProject;
       state.list.unshift(newProject);

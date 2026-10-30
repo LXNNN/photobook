@@ -74,13 +74,16 @@ export default function TemplatePanel({ format, onApplied }: Props) {
     const currentPageImages = allImageIds.slice(0, neededSlots);
 
     // 应用模板到当前页（记录模板 ID，支持"保存模板"回写）
+    // 氛围感模板没有替换文案这回事：手动套用时也保持模板文字原样，并全部标成 fixed
+    const isAtmosphere = template.styleId === 'atmosphere';
     const { elements, doodle, background } = applyTemplate(
       template,
       format,
       currentPageImages,
       project.themeId,
       project.bodyFontSize || DEFAULT_BODY_FONT_SIZE,
-      project.bodyColor || DEFAULT_BODY_COLOR
+      project.bodyColor || DEFAULT_BODY_COLOR,
+      isAtmosphere ? { preserveText: true, forceFixedText: true } : undefined
     );
     dispatch(replacePageElements({ pageIndex, elements, templateId: template.id, doodle, background }));
 

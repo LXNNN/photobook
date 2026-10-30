@@ -12,6 +12,7 @@ import { generateId } from '@/utils/units';
 import { ensureFolderReady, ensureAlbumFolder, persistProject } from '@/utils/folderLibrary';
 import { PRESET_FORMATS, ALBUM_STYLES } from '@/types';
 import type { ImageAsset, AlbumStyleId } from '@/types';
+import { ATMOSPHERE_STYLE_ENTRY_ENABLED, ATMOSPHERE_STYLE_COMING_SOON } from '@/utils/featureFlags';
 import classic1 from '@/assets/经典1.jpg';
 import classic2 from '@/assets/经典2.jpg';
 import atmosphere1 from '@/assets/氛围感1.jpg';
@@ -176,6 +177,8 @@ export default function CreateWizard() {
       }
 
       // 2. 自动排版生成项目（先有相册，照片才知道该写进哪个文件夹）
+      // 入口置灰时即使状态里残留 atmosphere 也按经典排，线上不会生成出氛围感相册
+      const effectiveStyle: AlbumStyleId = ATMOSPHERE_STYLE_ENTRY_ENABLED ? selectedStyle : 'classic';
       const project = autoGenerateAlbum({
         projectName: projectName.trim(),
         themeId: selectedTheme,
@@ -183,9 +186,9 @@ export default function CreateWizard() {
         format: PRESET_FORMATS.A5,
         // 正文字号不在这里选了，统一用默认的 13pt（DEFAULT_BODY_FONT_SIZE）；
         // 想改的话是生成之后在编辑页「🎨 正文样式」里改
-        includeCover,
-        includeEnding,
-        styleId: selectedStyle,
+        includeCover: effectiveStyle === 'atmosphere' ? true : includeCover,
+        includeEnding: effectiveStyle === 'atmosphere' ? true : includeEnding,
+        styleId: effectiveStyle,
       });
 
       // 3. 已连接文件夹时，先把这本相册的文件夹建好
@@ -211,7 +214,12 @@ export default function CreateWizard() {
       }, 500);
     } catch (error) {
       console.error('生成失败:', error);
-      alert('生成失败，请重试');
+      // 氛围感的失败原因通常是模板被删到凑不齐，直接把原因说清楚
+      alert(
+        ATMOSPHERE_STYLE_ENTRY_ENABLED && selectedStyle === 'atmosphere' && error instanceof Error
+          ? `生成失败：${error.message}`
+          : '生成失败，请重试'
+      );
       setStep('settings');
     }
   };
@@ -246,7 +254,7 @@ export default function CreateWizard() {
         {step === 'upload' && (
           <div className="max-w-4xl mx-auto">
             <h2 className="text-lg font-medium text-gray-700 mb-4">选择照片</h2>
-            <p className="text-sm text-gray-500 mb-6">一次可以选择多张照片，系统会自动排版生成相册。建议上传 10-40 张效果最佳。</p>
+            <p className="text-sm text-gray-500 mb-6">一次可以选择多张照片，系统会自动排版生成相册。建议上传 10-50 张效果最佳。建议不要超过 80 张。</p>
 
             {/* 拖拽上传区域 */}
             <div
@@ -395,36 +403,51 @@ export default function CreateWizard() {
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-3">选择相册风格</label>
               <div className="grid grid-cols-2 gap-3">
-                {ALBUM_STYLES.map((style) => (
-                  <button
-                    key={style.id}
-                    onClick={() => setSelectedStyle(style.id)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
-                      selectedStyle === style.id
-                        ? 'border-amber-500 bg-amber-50 shadow-md'
-                        : 'border-gray-200 hover:border-gray-300 bg-white'
-                    }`}
-                  >
-                    <div className="text-sm font-medium text-gray-800">{style.name}</div>
-                    <div className="text-xs text-gray-400 mt-1">
-                      {style.id === 'classic' ? '图片+文字排版，把你的相册变成一本书' : '新模板制作中，敬请期待'}
-                    </div>
-                    <div className="flex gap-2 mt-3">
-                      <img
-                        src={style.id === 'classic' ? classic1 : atmosphere1}
-                        alt={`${style.name}示例1`}
-                        className="object-cover border border-[#999] rounded-none"
-                        style={{ width: '146px', height: '100px' }}
-                      />
-                      <img
-                        src={style.id === 'classic' ? classic2 : atmosphere2}
-                        alt={`${style.name}示例2`}
-                        className="object-cover border border-[#999] rounded-none"
-                        style={{ width: '146px', height: '100px' }}
-                      />
-                    </div>
-                  </button>
-                ))}
+                {ALBUM_STYLES.map((style) => {
+                  // 氛围感设计这一轮先不对外开放：线上构建里置灰，本地开发照常可点
+                  const locked = style.id === 'atmosphere' && !ATMOSPHERE_STYLE_ENTRY_ENABLED;
+                  return (
+                    <button
+                      key={style.id}
+                      type="button"
+                      disabled={locked}
+                      aria-disabled={locked}
+                      onClick={() => setSelectedStyle(style.id)}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        locked
+                          ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                          : selectedStyle === style.id
+                            ? 'border-amber-500 bg-amber-50 shadow-md'
+                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <div className={`text-sm font-medium ${locked ? 'text-gray-400' : 'text-gray-800'}`}>
+                        {style.name}
+                      </div>
+                      <div className={`text-xs mt-1 ${locked ? 'text-amber-700' : 'text-gray-400'}`}>
+                        {locked
+                          ? ATMOSPHERE_STYLE_COMING_SOON
+                          : style.id === 'classic'
+                            ? '图片+文字排版，把你的相册变成一本书'
+                            : '固定跨页配对，像一本艺术手账'}
+                      </div>
+                      <div className={`flex gap-2 mt-3 ${locked ? 'opacity-40 grayscale' : ''}`}>
+                        <img
+                          src={style.id === 'classic' ? classic1 : atmosphere1}
+                          alt={`${style.name}示例1`}
+                          className="object-cover border border-[#999] rounded-none"
+                          style={{ width: '146px', height: '100px' }}
+                        />
+                        <img
+                          src={style.id === 'classic' ? classic2 : atmosphere2}
+                          alt={`${style.name}示例2`}
+                          className="object-cover border border-[#999] rounded-none"
+                          style={{ width: '146px', height: '100px' }}
+                        />
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -461,25 +484,40 @@ export default function CreateWizard() {
             <div className="mb-8 p-4 bg-gray-50 rounded-lg">
               <label className="block text-sm font-medium text-gray-700 mb-3">高级选项</label>
               <div className="space-y-3">
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label
+                  className={`flex items-center gap-3 ${
+                    selectedStyle === 'atmosphere' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                  }`}
+                >
                   <input
                     type="checkbox"
-                    checked={includeCover}
+                    checked={selectedStyle === 'atmosphere' ? true : includeCover}
+                    disabled={selectedStyle === 'atmosphere'}
                     onChange={(e) => setIncludeCover(e.target.checked)}
                     className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                   />
                   <span className="text-sm text-gray-600">生成封面页（大标题+首图）</span>
                 </label>
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label
+                  className={`flex items-center gap-3 ${
+                    selectedStyle === 'atmosphere' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                  }`}
+                >
                   <input
                     type="checkbox"
-                    checked={includeEnding}
+                    checked={selectedStyle === 'atmosphere' ? true : includeEnding}
+                    disabled={selectedStyle === 'atmosphere'}
                     onChange={(e) => setIncludeEnding(e.target.checked)}
                     className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
                   />
                   <span className="text-sm text-gray-600">生成结尾页（寄语）</span>
                 </label>
               </div>
+              {selectedStyle === 'atmosphere' && (
+                <p className="text-xs text-amber-700 mt-2">
+                  氛围感设计固定生成封面和尾页，这样跨页配对才排得整齐
+                </p>
+              )}
             </div>
 
             {/* 按钮 */}
@@ -492,8 +530,6 @@ export default function CreateWizard() {
               </button>
               <button
                 onClick={handleGenerate}
-                disabled={selectedStyle === 'atmosphere'}
-                title={selectedStyle === 'atmosphere' ? '氛围感设计的模板还在制作中' : undefined}
                 className="px-8 py-2.5 bg-amber-700 text-white rounded-lg hover:bg-amber-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
               >
                 ✨ 开始生成

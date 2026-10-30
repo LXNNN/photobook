@@ -525,6 +525,19 @@ export const TEMPLATES: TemplateDefinition[] = [
     ],
   },
   {
+    id: 'two-diagonal-text',
+    name: '对角图文',
+    category: '二图',
+    description: '两张照片对角排列，左上右下各配一段正文文字',
+    thumbnail: '',
+    elements: [
+      { type: 'image', x: 0.0639, y: 0.0714, width: 0.4392, height: 0.4226, cropHint: 'cover' },
+      { type: 'image', x: 0.5031, y: 0.5092, width: 0.4392, height: 0.4229, cropHint: 'cover' },
+      { type: 'text', x: 0.5746, y: 0.1647, width: 0.3134, height: 0.2359, placeholder: '有些风景，只有亲自站在那里才能感受。风的味道、光的温度，都成了记忆里最珍贵的部分。不用刻意寻找，最美的瞬间往往就在不经意的转角。把这些瞬间都收藏起来，在往后的日子里慢慢回味。', body: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+      { type: 'text', x: 0.0882, y: 0.6191, width: 0.357, height: 0.2031, placeholder: '旅行的意义，不在于去了多少地方，而在于在路上遇见的那些人、那些事，以及那个不一样的自己。把烦恼丢在身后，把期待装进行囊，去看看这个世界的美好。', body: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
+    ],
+  },
+  {
     id: 'three-collage',
     name: '三图拼贴',
     category: '三图',
@@ -1570,6 +1583,14 @@ export const TEMPLATES: TemplateDefinition[] = [
   },
 ];
 
+/** applyTemplate 的可选行为开关 */
+export interface ApplyTemplateOptions {
+  /** 保持模板文字原样，不填主题文案/正文样式 */
+  preserveText?: boolean;
+  /** 把所有文字标成 fixed（不参与全局标题/正文样式） */
+  forceFixedText?: boolean;
+}
+
 /**
  * 将模板应用到页面，生成实际元素
  * @param template 模板定义
@@ -1578,6 +1599,7 @@ export const TEMPLATES: TemplateDefinition[] = [
  * @param themeId 主题ID（旅行/日常用模板文案，其他主题用主题文案）
  * @param bodyFontSize 正文字号（pt），默认 13；传相册的 bodyFontSize
  * @param bodyColor 正文颜色，默认 #333333；传相册的 bodyColor
+ * @param options 氛围感模板用：preserveText 保持模板文字原样，forceFixedText 把所有文字标成 fixed
  */
 export function applyTemplate(
   template: TemplateDefinition,
@@ -1585,7 +1607,8 @@ export function applyTemplate(
   existingImageIds: string[] = [],
   themeId: string = 'travel',
   bodyFontSize: number = DEFAULT_BODY_FONT_SIZE,
-  bodyColor: string = DEFAULT_BODY_COLOR
+  bodyColor: string = DEFAULT_BODY_COLOR,
+  options?: ApplyTemplateOptions
 ): { elements: Element[]; doodle?: PageDoodle; background?: PageBackground } {
   let imageIndex = 0;
   const elements: Element[] = [];
@@ -1690,8 +1713,10 @@ export function applyTemplate(
       let content: string;
       let actualFontSizeRatio = fontSizeRatio;
 
-      // 固定文字（比如装饰小标签）保持原样，不填充文案
-      if ((tplEl as any).fixed) {
+      // 氛围感模板：文字全部按模板原样，不触发主题文案/正文样式
+      if (options?.preserveText) {
+        content = tplEl.placeholder || '';
+      } else if ((tplEl as any).fixed) {
         content = tplEl.placeholder || '';
       } else if (isBody) {
         // 正文：主题文案库优先；标记 shortBody 的用主题短正文（一行短句），普通正文用主题长正文
@@ -1752,21 +1777,22 @@ export function applyTemplate(
         fontSize: Math.round(actualFontSizeRatio * format.width * 2.83), // mm转pt近似
         fontFamily: tplEl.fontFamily || 'sans-serif',
         fontWeight: tplEl.fontWeight ?? 'normal',
-        // 正文的颜色由相册的正文样式决定（默认 #333333），其余保持模板自己的配色
-        color: isBody ? bodyColor : tplEl.color || '#666666',
+        // 正文的颜色由相册的正文样式决定（默认 #333333），其余保持模板自己的配色；
+        // preserveText 时连正文标记也按模板原色走，不让正文字体色渗进来
+        color: !options?.preserveText && isBody ? bodyColor : tplEl.color || '#666666',
         textAlign: tplEl.textAlign || 'left',
         lineHeight: tplEl.lineHeight ?? 1.5,
         letterSpacing: 0,
         // 模板带了背景色就带上（「新建模板」存下来的页可能有；老模板没有这个字段）
         backgroundColor: tplEl.backgroundColor,
-        fixed: (tplEl as any).fixed || false,
+        fixed: options?.forceFixedText ? true : ((tplEl as any).fixed || false),
         // 显式表态：模板出来的每个文字都写明是不是正文 / 标题，
         // 全站不用再靠字号猜（封面尾页那几段也是显式的 false）。
         // shortBody 也要写出来：不写的话智能排版回填文案时只认 body，
         // 小空间里的短句会被长正文顶掉、撑出文字框。
-        body: isBody,
-        shortBody: tplEl.shortBody === true,
-        title,
+        body: options?.preserveText ? false : isBody,
+        shortBody: options?.preserveText ? false : tplEl.shortBody === true,
+        title: options?.preserveText ? false : title,
       });
     }
   }

@@ -857,8 +857,8 @@ export default function Editor() {
                 }`}
               >
                 {tab === 'pages' ? '页面' : '模板'}
-                {/* 模板页签悬停提示气泡 */}
-                {tab === 'templates' && (
+                {/* 模板页签悬停提示气泡：氛围感模板不替换文案，这句提醒只对经典排版有意义 */}
+                {tab === 'templates' && project.styleId !== 'atmosphere' && (
                   <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-52 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50 pointer-events-none shadow-xl leading-relaxed text-left">
                     切换模板时，当前页已编辑好的文案会被覆盖，模板放不下的照片也会被删除，请先保存文案，再切换模板
                     {/* 气泡小箭头 */}

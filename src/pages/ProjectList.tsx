@@ -29,8 +29,9 @@ import {
   takeFolderNotices,
   persistProject,
 } from '@/utils/folderLibrary';
-import { PRESET_FORMATS } from '@/types';
-import type { Project, ImageElement } from '@/types';
+import { PRESET_FORMATS, ALBUM_STYLES } from '@/types';
+import type { Project, ImageElement, AlbumStyleId } from '@/types';
+import { ATMOSPHERE_STYLE_ENTRY_ENABLED, ATMOSPHERE_STYLE_COMING_SOON } from '@/utils/featureFlags';
 // 书架页的装饰插画。放在项目里、不走外链 —— 网站不再有对外请求（原来挂在外部图床上）
 import bookshelfGirl from '@/assets/bookshelf-girl.jpg';
 
@@ -69,6 +70,8 @@ export default function ProjectList() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
+  // 空白相册也要先选风格：编辑器里的模板和右侧配置栏按它显示
+  const [newStyle, setNewStyle] = useState<AlbumStyleId>('classic');
   const [coverUrls, setCoverUrls] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<BusyState | null>(null);
   const [conflict, setConflict] = useState<ConflictState | null>(null);
@@ -184,7 +187,9 @@ export default function ProjectList() {
   async function handleCreate() {
     if (!newName.trim()) return;
     if (!guarded('创建')) return;
-    dispatch(createProject({ name: newName.trim() }));
+    // 氛围感入口置灰期间（线上构建），即使状态里残留 atmosphere 也按经典建
+    const styleId: AlbumStyleId = ATMOSPHERE_STYLE_ENTRY_ENABLED ? newStyle : 'classic';
+    dispatch(createProject({ name: newName.trim(), styleId }));
     setTimeout(async () => {
       const state = store.getState();
       if (state.project.current) {
@@ -195,6 +200,7 @@ export default function ProjectList() {
     }, 50);
     setShowCreate(false);
     setNewName('');
+    setNewStyle('classic');
   }
 
   /** 守卫（§5.3）：文件夹模式已启用但没连上时，拦下需要读写磁盘的动作 */
@@ -741,17 +747,55 @@ export default function ProjectList() {
       {/* 新建弹窗 */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowCreate(false)}>
-          <div className="bg-white rounded-xl p-6 w-96 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-xl p-6 w-[30rem] max-w-[calc(100vw-2rem)] shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold mb-4">新建相册</h2>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">相册名称</label>
             <input
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
               placeholder="输入相册名称..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-600 mb-4"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-600 mb-5"
               autoFocus
             />
+            {/* 风格参考配置页：空白相册也先定风格，编辑器里的模板和右侧配置栏按它显示 */}
+            <label className="block text-sm font-medium text-gray-700 mb-2">选择模板风格</label>
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              {ALBUM_STYLES.map((style) => {
+                // 氛围感设计这一轮先不对外开放：线上构建里置灰，本地开发照常可点
+                const locked = style.id === 'atmosphere' && !ATMOSPHERE_STYLE_ENTRY_ENABLED;
+                const active = newStyle === style.id;
+                return (
+                  <button
+                    key={style.id}
+                    type="button"
+                    aria-pressed={active}
+                    disabled={locked}
+                    aria-disabled={locked}
+                    onClick={() => setNewStyle(style.id)}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                      locked
+                        ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                        : active
+                          ? 'border-amber-500 bg-amber-50 shadow-sm'
+                          : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <div className={`text-sm font-medium ${locked ? 'text-gray-400' : 'text-gray-800'}`}>
+                      {style.name}
+                    </div>
+                    <div className={`text-xs mt-1 leading-relaxed ${locked ? 'text-amber-700' : 'text-gray-400'}`}>
+                      {locked
+                        ? ATMOSPHERE_STYLE_COMING_SOON
+                        : style.id === 'classic'
+                          ? '图片+文字排版，把你的相册变成一本书'
+                          : '固定跨页配对，像一本艺术手账'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowCreate(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
                 取消

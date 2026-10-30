@@ -4,6 +4,11 @@ import { THEMES, randomPick, getThemeById, type Theme } from '@/templates/themes
 import { generateId } from '@/utils/units';
 import { DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
 import { spreadGroups } from '@/utils/spread';
+import { orderPhotosForTemplate } from '@/utils/photoOrder';
+import type { AutoPhoto } from '@/utils/photoOrder';
+import { generateAtmosphereAlbum } from '@/utils/atmosphereLayout';
+
+export type { AutoPhoto };
 
 /**
  * 智能生成相册（v2）
@@ -16,7 +21,7 @@ import { spreadGroups } from '@/utils/spread';
  * - 6 图模板加入轮换
  * - 比较满的排版（四图网格、四图杂志风、五图拼贴、双图横板）
  *   暂时不参与智能排版，只在模板面板里供手动选用（名单见 AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS）
- * - 九宫格在照片超过 45 张时启用，固定放正文最后那一对，和一张满版图配对
+ * - 九宫格在照片超过 60 张时启用，固定放正文最后那一对，和一张满版图配对
  * - 照片按横竖比例分配图位，画面分量高的照片进大图位
  * - 模板整本轮换：同一对、相邻页不重复
  * - 禁组排除：FORBIDDEN_SPREAD_PAIRS 里的模板组合不会出现在同一个跨页上
@@ -26,15 +31,6 @@ import { spreadGroups } from '@/utils/spread';
  * 每一对 = 跨页左右两页（或封面/尾页旁边的落单页），先定照片总数再拆成两页。
  * 配对规则直接复用预览页/双面导出的 spreadGroups，三处永远是同一套。
  */
-
-/** 智能排版用的照片信息（创建页在生成前算好，只活在内存里，不落盘） */
-export interface AutoPhoto {
-  id: string;
-  width: number;
-  height: number;
-  /** 画面分量 0-1（utils/photoAnalysis 算出来的），缺省按 0.5 */
-  weight?: number;
-}
 
 export interface AutoLayoutOptions {
   projectName: string;
@@ -47,7 +43,7 @@ export interface AutoLayoutOptions {
   includeCover: boolean;
   /** 是否生成结尾页 */
   includeEnding: boolean;
-  /** 相册风格（默认 classic）；atmosphere 的模板还没做，先拦下 */
+  /** 相册风格（默认 classic） */
   styleId?: AlbumStyleId;
 }
 
@@ -65,8 +61,8 @@ const MAX_NORMAL_COUNT = 6;
 const MAX_LONE_COUNT = 5;
 /** 九宫格模板的张数（1 张头像 + 9 格） */
 const NINE_GRID_COUNT = 10;
-/** 照片超过这个数（>45，即 46 张起）才启用九宫格，一本最多一次 */
-const NINE_GRID_MIN_PHOTOS = 45;
+/** 照片超过这个数（>60，即 61 张起）才启用九宫格，一本最多一次 */
+const NINE_GRID_MIN_PHOTOS = 60;
 /** 一对跨页左右加起来最多几张（九宫格那一对除外） */
 const MAX_PHOTOS_PER_SPREAD = 8;
 /** 同一跨页两页留白率的最小差距（10 个百分点），达不到就算了（软约束） */
@@ -83,7 +79,7 @@ const SIX_GRID_MIN_PHOTOS = 12;
 /**
  * 暂时不参与智能排版的模板 —— 统一放这一份名单，只在模板面板里手动选用，
  * 之后另有设计计划。想重新启用某款：从这里删掉对应 id 即可。
- * 九宫格已从名单里移出（>40 张时启用、放正文最后一对、配满版图）；
+ * 九宫格已从名单里移出（>60 张时启用、放正文最后一对、配满版图）；
  * 若以后想再停用，把它加回来，连带的「10+1 特殊配对」也会一起跳过（见 planContentPages）。
  */
 const AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS = new Set<string>([
@@ -119,6 +115,7 @@ const TEMPLATES_BY_COUNT: Record<number, string[]> = {
     'two-images-stack',    // 双图横板
     'two-images-slanted',  // 双图留白
     'dual-portrait',       // 双图竖版
+    'two-diagonal-text',   // 对角图文（两张斜对角排列，各配一段正文）
   ],
   3: [
     'three-collage',       // 三图拼贴
@@ -297,7 +294,7 @@ interface PlannedPageCount {
  * 规划正文每页放几张照片。
  *
  * 流程：
- * 1. 先看要不要安排九宫格（>45 张，一本一次），它固定占正文最后那一对
+ * 1. 先看要不要安排九宫格（>60 张，一本一次），它固定占正文最后那一对
  *    （10 张 + 1 张满版图）；九宫格在 AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS 里时这条规则整个跳过
  * 2. 按目标密度定正文页数，并把页面按 spreadGroups 配成一对一对
  * 3. 相册 ≥12 张时，挑一对固定放一张 6 图页（6+1 或 6+2），保证 6 图模板能轮到
@@ -308,7 +305,7 @@ function planContentPages(
   includeCover: boolean,
   includeEnding: boolean
 ): PlannedPageCount[] | null {
-  // ===== 1. 选页数（九宫格 >45 张时安排）=====
+  // ===== 1. 选页数（九宫格 >60 张时安排）=====
   // 九宫格若被放回暂停名单，它的「10+1 特殊配对」也一起跳过
   const nineGridEnabled = !AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS.has('nine-grid-avatar');
   let useNineGrid = false;
@@ -578,72 +575,6 @@ function pickTemplatePair(
   return randomPick(best);
 }
 
-/** cover 模式下这张照片放进这个图位要裁掉多少（0 = 一点都不用裁） */
-function cropLoss(photoAspect: number, slotAspect: number): number {
-  if (!(photoAspect > 0) || !(slotAspect > 0)) return 0;
-  const visible = photoAspect > slotAspect ? slotAspect / photoAspect : photoAspect / slotAspect;
-  return 1 - visible;
-}
-
-/**
- * 把这一页的照片分到模板的图位里，返回按元素顺序排好的图片 id。
- *
- * 规则：
- * - 竖图优先进竖框、横图优先进横框，尽量少裁
- * - 最大的图位优先分给「画面分量」最高的照片（主角），
- *   但如果它的形状实在不合适、裁得太狠，就让给更合适的那张
- * - 条件差不多时按上传顺序
- */
-function orderPhotosForTemplate(
-  template: TemplateDefinition,
-  photos: AutoPhoto[],
-  format: BookFormat
-): string[] {
-  const slots = template.elements
-    .filter((el) => el.type === 'image')
-    .map((el) => ({
-      area: el.width * el.height,
-      aspect: (el.width * format.width) / (el.height * format.height),
-    }));
-
-  // 张数对不上（理论上不会发生）就按原顺序填，至少不丢照片
-  if (slots.length !== photos.length) {
-    return photos.map((photo) => photo.id);
-  }
-
-  const remaining = [...photos];
-  const ordered = new Array<string>(slots.length);
-  const slotOrder = slots
-    .map((_, index) => index)
-    .sort((a, b) => slots[b].area - slots[a].area);
-  const heroSlot = slotOrder[0];
-
-  for (const slotIndex of slotOrder) {
-    const slot = slots[slotIndex];
-    let bestIndex = 0;
-    let bestScore = Number.POSITIVE_INFINITY;
-
-    for (let i = 0; i < remaining.length; i++) {
-      const photo = remaining[i];
-      const photoAspect =
-        photo.width > 0 && photo.height > 0 ? photo.width / photo.height : slot.aspect;
-      let score = cropLoss(photoAspect, slot.aspect);
-      // 主角加成只给最大的图位；0.18 足够让同样合适的照片优先，
-      // 又不至于为了「主角」把一张竖图硬塞进横框裁掉一大半
-      if (slotIndex === heroSlot) score -= 0.18 * (photo.weight ?? 0.5);
-      // 同等条件按上传顺序，保证结果稳定
-      score += i * 1e-6;
-      if (score < bestScore) {
-        bestScore = score;
-        bestIndex = i;
-      }
-    }
-
-    ordered[slotIndex] = remaining.splice(bestIndex, 1)[0].id;
-  }
-  return ordered;
-}
-
 /**
  * 从主题中获取不重复的页面标题
  */
@@ -711,9 +642,9 @@ export function autoGenerateAlbum(options: AutoLayoutOptions): Project {
     styleId = 'classic',
   } = options;
 
-  // 氛围感设计的模板还没做：先明确拦下，别生成出挂着 atmosphere 标签的经典排版
+  // 氛围感设计走固定跨页配对，和经典排版是两套生成器
   if (styleId === 'atmosphere') {
-    throw new Error('氛围感设计的模板还在制作中，先选「经典图文排版」吧');
+    return generateAtmosphereAlbum(options);
   }
   const theme = getThemeById(themeId) || THEMES[0];
   const used: UsedTexts = {

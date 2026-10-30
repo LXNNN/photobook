@@ -231,6 +231,7 @@ export const TEMPLATE_COPY_MAP: Record<string, any[]> = {
   'three-title-top': THREE_COLLAGE_TEXTS,
   'three-top-two-bottom-wide': THREE_COLLAGE_TEXTS,
   'two-images-slanted': THREE_OFFSET_TEXTS,
+  'two-diagonal-text': IMAGE_TOP_TEXT_BOTTOM_TEXTS,
   'four-left3-right1': THREE_COLLAGE_TEXTS,
   'four-literary': THREE_COLLAGE_TEXTS,
   'four-grid-whitespace': FOUR_GRID_WHITESPACE_TEXTS,

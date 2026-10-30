@@ -82,7 +82,7 @@ npm run preview   # 预览构建产物
 - **相册风格（2026-10-20 加）**：`Project.styleId` / `TemplateDefinition.styleId`，'classic' 经典图文排版（不标 = classic）/ 'atmosphere' 氛围感设计（模板还没做）。设置页「选择相册风格」二选一；`autoGenerateAlbum` 对 atmosphere 直接抛错拦住（别生成出挂着 atmosphere 标签的经典排版）；编辑器左侧模板面板按项目风格过滤模板；右侧**「添加选区」整块只在 atmosphere 显示**（classic 整个不显示；普通选区按钮也先藏着、handler 保留，以后开放加回按钮即可）；「新建模板」用 `createTemplateFromPage` 把当前项目风格写进新模板
 - 创建页「✨ 开始生成」走 `autoGenerateAlbum({ photos })`。照片先转成 `AutoPhoto`（宽高 + `weight` 画面分量），`weight` 由 `photoAnalysis.analyzePhotoWeight` 读 200px 缩略图在本地算（对比度 / 边缘密度 / 饱和度），只活在内存、不落盘，照片不出电脑
 - **暂时不参与智能排版的模板**（只在模板面板手动选用，之后另有设计计划）：双图横板 `two-images-stack`、四图网格 `four-grid`、四图杂志风 `four-magazine`、五图拼贴 `five-collage`。名单统一在 `autoLayout.ts` 的 `AUTO_LAYOUT_EXCLUDED_TEMPLATE_IDS`，想启用某款从名单删掉即可
-- **九宫格**：照片 >45 张（46 张起）才启用、一本最多一次，固定放正文最后一对；另一页固定配满版图 `full-image-bordered`（不参与模板轮换，规划时用 `PlannedPageCount.forceFullImage` 标记）。若把 `nine-grid-avatar` 放回暂停名单，这条规则整个跳过
+- **九宫格**：照片 >60 张（61 张起）才启用、一本最多一次，固定放正文最后一对；另一页固定配满版图 `full-image-bordered`（不参与模板轮换，规划时用 `PlannedPageCount.forceFullImage` 标记）。若把 `nine-grid-avatar` 放回暂停名单，这条规则整个跳过
 - **按跨页成对规划**：正文页先复用 `spreadGroups()` 配成 `[1,2]`、`[3,4]`…，每对照片总数最多 `MAX_PHOTOS_PER_SPREAD = 8`（没有下限，小相册 1+1、2+2 都允许）
 - 单图页有四个模板参与轮换：满版（`full-image-bordered`）、上图下文、上文下图、左图右文。**满版图必须和 ≥4 张照片的另一页配对**（满版没有文案，小跨页里会显得空）；1+1 / 1+2 / 1+3 时该页改用带文字的三个单图模板。落单页旁边是封面/尾页，不受这条限制
 - 6 图模板在 ≥12 张时随机挑一对排 `[6,1]` / `[6,2]`（选页数时按 7 张给它预留容量，分配时那一对的下限也钉在 7，免得被前面的页吃光），一本最多一页
