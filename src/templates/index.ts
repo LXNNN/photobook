@@ -362,7 +362,7 @@ export const TEMPLATES: TemplateDefinition[] = [
     thumbnail: 'one-stamp',
     elements: [
       // 居中邮票选区
-      { type: 'image', x: 0.225, y: 0.2571, width: 0.55, height: 0.4857, cropHint: 'cover', stampEdge: true },
+      { type: 'image', x: 0.225, y: 0.2572, width: 0.55, height: 0.4857, cropHint: 'cover', stampEdge: true },
       // 斜向散落英文字母（固定装饰文字，不填充文案）
       { type: 'text', x: 0.0676, y: 0.0476, width: 0.0541, height: 0.0381, placeholder: 'A', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -15 },
       { type: 'text', x: 0.1689, y: 0.0952, width: 0.0541, height: 0.0381, placeholder: 'B', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 20 },
@@ -404,6 +404,8 @@ export const TEMPLATES: TemplateDefinition[] = [
       { type: 'text', x: 0.7297, y: 0.8952, width: 0.0541, height: 0.0381, placeholder: 'L', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -25 },
       { type: 'text', x: 0.6622, y: 0.9429, width: 0.0541, height: 0.0381, placeholder: 'M', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: 20 },
       { type: 'text', x: 0.8108, y: 0.9524, width: 0.0541, height: 0.0381, placeholder: 'N', fixed: true, locked: true, fontSizeRatio: 0.0238, textAlign: 'center', fontWeight: 'normal', color: '#999999', rotation: -10 },
+      { type: 'text', x: 0.3317, y: 0.1247, width: 0.5472, height: 0.0511, placeholder: 'To the good days.', fontSizeRatio: 0.0596, textAlign: 'right', fontWeight: 'bold', color: '#333333', lineHeight: 1.5, fontFamily: '"Montserrat", sans-serif' },
+      { type: 'text', x: 0.0709, y: 0.8338, width: 0.4697, height: 0.0952, placeholder: 'Life moves fast, but in these pages, \nwe can slow it down, hold on a little longer, and remember how it felt to be here.', body: true, fontSizeRatio: 0.031, textAlign: 'left', fontWeight: 'normal', color: '#333333', lineHeight: 1.5 },
     ],
   },
   {
