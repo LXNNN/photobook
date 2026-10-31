@@ -55,6 +55,7 @@ export class CanvasRenderer {
   private imageCache: Map<string, HTMLImageElement> = new Map();
   private dirty: boolean = true;
   private rafId: number | null = null;
+  private onStaticImageLoaded: (() => void) | null = null;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -68,6 +69,9 @@ export class CanvasRenderer {
     this.dpi = dpi;
     this.renderScale = renderScale;
     this.resize();
+    // 静态背景图异步加载完成后触发重绘
+    this.onStaticImageLoaded = () => this.markDirty();
+    window.addEventListener('static-image-loaded', this.onStaticImageLoaded);
   }
 
   /** 逻辑画布尺寸（96dpi 像素，也是 CSS 显示尺寸） */
@@ -450,6 +454,9 @@ export class CanvasRenderer {
   destroy() {
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
+    }
+    if (this.onStaticImageLoaded) {
+      window.removeEventListener('static-image-loaded', this.onStaticImageLoaded);
     }
     this.imageCache.clear();
   }

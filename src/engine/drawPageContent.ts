@@ -10,8 +10,12 @@ function getOrLoadStaticImage(url: string): HTMLImageElement | undefined {
   let img = staticImageCache.get(url);
   if (!img) {
     img = new Image();
+    img.onload = () => window.dispatchEvent(new CustomEvent('static-image-loaded'));
     img.src = url;
     staticImageCache.set(url, img);
+  } else if (!img.complete) {
+    // 已有缓存但未加载完，补一次重绘通知
+    img.onload = () => window.dispatchEvent(new CustomEvent('static-image-loaded'));
   }
   return img;
 }

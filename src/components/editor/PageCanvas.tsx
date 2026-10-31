@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Page, BookFormat } from '@/types';
 import { mmToPx } from '@/utils/units';
 import { getImageAsset } from '@/utils/assetStore';
@@ -34,6 +34,14 @@ export default function PageCanvas({ page, format, width, frozen = false }: Prop
   const lastDrawnRef = useRef<Page | null>(null);
   /** 绘制序号：只有最新一轮有资格落笔，防止旧画面补画到新画布上 */
   const drawIdRef = useRef(0);
+  const [tick, setTick] = useState(0);
+
+  // 静态背景图异步加载完成后触发重绘
+  useEffect(() => {
+    const handler = () => setTick((t) => t + 1);
+    window.addEventListener('static-image-loaded', handler);
+    return () => window.removeEventListener('static-image-loaded', handler);
+  }, []);
 
   // 横纵共用一个缩放比例，保证等比
   const scale = width / mmToPx(format.width, DPI);
@@ -97,7 +105,7 @@ export default function PageCanvas({ page, format, width, frozen = false }: Prop
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       drawPageContent(ctx, shown, format, DPI, assets);
     })();
-  }, [page, format, frozen, scale]);
+  }, [page, format, frozen, scale, tick]);
 
   return <canvas ref={canvasRef} width={width} height={height} className="block w-full h-full" />;
 }
