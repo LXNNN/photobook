@@ -120,7 +120,23 @@ export default function Viewer() {
   // 渲染所有页面为图片
   async function renderAllPages(p: Project) {
     setLoading(true);
-    const dpi = 150;
+
+    // 预览图只按「屏幕上真正会显示的大小」渲染，不再固定 150dpi。
+    // 书页正常显示约 450px 宽，150dpi 却会画到 874×1240 —— 多出来的像素在
+    // 翻页动画里每帧都要重新缩放光栅化，弱显卡上就是卡顿的直接来源，加载也慢。
+    // 渲染尺寸和下面 calcSize 的放大镜分支用同一套算法（放大镜是屏幕上书页
+    // 最大的时候，1080p 窗口约 533px 宽）：正常翻阅只是轻微下采样，放大后
+    // 正好 1:1 不糊；高 DPI 屏按 devicePixelRatio 补回来，封顶仍是 150dpi。
+    const ratio = p.format.width / p.format.height;
+    const maxW = window.innerWidth - 128;
+    const maxH = window.innerHeight - 144;
+    let pageCssWidth = Math.min(maxW / 2, maxH / ratio);
+    if (pageCssWidth / ratio > maxH) pageCssWidth = maxH * ratio;
+    const targetPagePx = Math.min(
+      Math.round(mmToPx(p.format.width, 150)),
+      Math.max(320, Math.ceil(pageCssWidth * Math.min(window.devicePixelRatio || 1, 2)))
+    );
+    const dpi = (targetPagePx / p.format.width) * 25.4;
 
     // 图片、艺术字体、静态背景图并行准备好：
     // 字体晚到会让预览图用系统字体顶替，背景图晚到会直接缺一块、之后再没机会补
