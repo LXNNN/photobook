@@ -3,7 +3,7 @@ import type { Page, BookFormat } from '@/types';
 import { mmToPx } from '@/utils/units';
 import { getImageAsset } from '@/utils/assetStore';
 import { getImageURL } from '@/utils/image';
-import { drawPageContent } from '@/engine/drawPageContent';
+import { drawPageContent, isStaticBackgroundReady } from '@/engine/drawPageContent';
 import { ensureFontsLoaded } from '@/utils/fonts';
 
 /** 和主画布同一个 dpi。缩略图不另算字号，靠整体缩放，所以这个值只用来推画布高度 */
@@ -32,6 +32,8 @@ export default function PageCanvas({ page, format, width, frozen = false }: Prop
   const frozenRef = useRef<Page | null>(null);
   /** 上次画过的是哪份数据，没变就直接跳过 */
   const lastDrawnRef = useRef<Page | null>(null);
+  /** 上次落笔时静态背景图是否就绪：图加载完 tick 重绘时 page 没变，但背景状态变了 */
+  const lastBgReadyRef = useRef(true);
   /** 绘制序号：只有最新一轮有资格落笔，防止旧画面补画到新画布上 */
   const drawIdRef = useRef(0);
   const [tick, setTick] = useState(0);
@@ -60,8 +62,11 @@ export default function PageCanvas({ page, format, width, frozen = false }: Prop
       frozenRef.current = null;
       shown = page;
     }
-    if (shown === lastDrawnRef.current) return;
+    // 背景图刚加载完时 page 引用没变，但上一版画面里还没有背景 —— 这时必须补画
+    const bgReady = isStaticBackgroundReady(shown);
+    if (shown === lastDrawnRef.current && bgReady && lastBgReadyRef.current) return;
     lastDrawnRef.current = shown;
+    lastBgReadyRef.current = bgReady;
     const myId = ++drawIdRef.current;
 
     (async () => {

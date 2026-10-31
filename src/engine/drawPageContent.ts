@@ -6,7 +6,7 @@ import { computeCoverCrop } from '@/utils/image';
 const staticImageCache = new Map<string, HTMLImageElement>();
 
 /** 获取或加载静态资源图片（URL形式，如import得到的打包后路径） */
-function getOrLoadStaticImage(url: string): HTMLImageElement | undefined {
+function getOrLoadStaticImage(url: string): HTMLImageElement {
   let img = staticImageCache.get(url);
   if (!img) {
     img = new Image();
@@ -18,6 +18,54 @@ function getOrLoadStaticImage(url: string): HTMLImageElement | undefined {
     img.onload = () => window.dispatchEvent(new CustomEvent('static-image-loaded'));
   }
   return img;
+}
+
+/** 背景值是不是打包后的静态资源 URL（和 collectAssetIds 的判断口径一致） */
+function isStaticBackgroundValue(value: string): boolean {
+  return value.startsWith('data:') || value.startsWith('/');
+}
+
+/**
+ * 静态背景图是否已经加载完成。
+ * 编辑器缩略图靠它判断「同一份 page 要不要再补画一次」——图片刚加载完时
+ * page 引用没变，但背景从没画过，不能当成同一份画面跳过。
+ */
+export function isStaticBackgroundReady(page: Page): boolean {
+  if (page.background.type !== 'image') return true;
+  const value = page.background.value;
+  // imageId 背景由 assets 提供，加载状态不归这里管
+  if (!isStaticBackgroundValue(value)) return true;
+  const img = staticImageCache.get(value);
+  return !!img && img.complete && img.naturalWidth > 0;
+}
+
+/**
+ * 等这批页面的静态背景图加载完。
+ *
+ * 预览页、PDF / 图片导出、书架封面都是「一次画完就结束」，没有重绘机会；
+ * 不等图片就落笔，背景图会永远缺一块。编辑器主画布和缩略图靠
+ * static-image-loaded 事件重绘，不需要调这个。
+ */
+export async function ensureStaticBackgroundsLoaded(pages: Page[]): Promise<void> {
+  const urls = new Set<string>();
+  for (const page of pages) {
+    if (page.background.type === 'image' && isStaticBackgroundValue(page.background.value)) {
+      urls.add(page.background.value);
+    }
+  }
+  await Promise.all(
+    [...urls].map((url) => {
+      const img = getOrLoadStaticImage(url);
+      // complete 对「已加载完」和「加载失败」都成立，两种情况都不用再等
+      if (img.complete) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        // 用 addEventListener 而不是覆盖 onload：getOrLoadStaticImage 的 onload
+        // 还要派发 static-image-loaded，覆盖掉编辑器画布就不会重绘了
+        img.addEventListener('load', () => resolve(), { once: true });
+        img.addEventListener('error', () => resolve(), { once: true });
+      });
+    })
+  );
 }
 
 /**

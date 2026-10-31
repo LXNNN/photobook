@@ -1,6 +1,6 @@
 import { Zip, ZipPassThrough } from 'fflate';
 import type { BookFormat, Page, Project } from '@/types';
-import { collectAssetIds, drawPageContent } from '@/engine/drawPageContent';
+import { collectAssetIds, drawPageContent, ensureStaticBackgroundsLoaded } from '@/engine/drawPageContent';
 import { decodeAssets } from './assetStore';
 import { ensureFontsLoaded } from './fonts';
 import { mmToPx } from './units';
@@ -94,10 +94,12 @@ export async function exportImagesZip(
   }
 
   // 整本书用到的图一次解码好，逐页复用（和 PDF 导出同一做法）。
-  // 字体也在画之前就绪，否则导出图里的艺术字会被系统字体顶替。
+  // 字体也在画之前就绪，否则导出图里的艺术字会被系统字体顶替；
+  // 静态背景图也要等，导出是一次画完就结束，不等它就永远缺背景。
   const [assets] = await Promise.all([
     decodeAssets(collectAssetIds(pages)),
     ensureFontsLoaded(pages),
+    ensureStaticBackgroundsLoaded(pages),
   ]);
 
   // 单页画布复用；双面另开一张两倍宽的，把左右两页拼进去

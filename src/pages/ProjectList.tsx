@@ -6,7 +6,7 @@ import { getAllProjects, deleteProject } from '@/utils/storage';
 import { getImageAsset, getImageMeta } from '@/utils/assetStore';
 import { getImageURL } from '@/utils/image';
 import { formatDate } from '@/utils/units';
-import { drawPageContent } from '@/engine/drawPageContent';
+import { drawPageContent, ensureStaticBackgroundsLoaded } from '@/engine/drawPageContent';
 import { ensureFontsLoaded } from '@/utils/fonts';
 import {
   exportAllProjects,
@@ -155,8 +155,12 @@ export default function ProjectList() {
             assets.set(el.imageId, img);
           }));
 
-          // 封面上的艺术字体要先加载好，不然画出来的系统字体会被拍进封面图
-          await ensureFontsLoaded([firstPage]);
+          // 封面上的艺术字体要先加载好，不然画出来的系统字体会被拍进封面图；
+          // 静态背景图同理，封面只画一次，不等它就永远没有背景
+          await Promise.all([
+            ensureFontsLoaded([firstPage]),
+            ensureStaticBackgroundsLoaded([firstPage]),
+          ]);
 
           // 渲染页面内容
           drawPageContent(ctx, firstPage, format, dpi, assets);
