@@ -5,6 +5,11 @@ import { setCurrentProject } from '@/store/projectSlice';
 import SpreadZoom from '@/components/viewer/SpreadZoom';
 import { getProject } from '@/utils/storage';
 import { decodeAssets } from '@/utils/assetStore';
+import {
+  decodePreviewAssets,
+  collectImageIdsForPages,
+  type PreviewImage,
+} from '@/utils/previewAssets';
 import { ensureFolderReady } from '@/utils/folderLibrary';
 import {
   exportImagesZip,
@@ -17,7 +22,7 @@ import { mmToPx } from '@/utils/units';
 import { drawPageContent, collectAssetIds, ensureStaticBackgroundsLoaded } from '@/engine/drawPageContent';
 import { ensureFontsLoaded } from '@/utils/fonts';
 import { jsPDF } from 'jspdf';
-import type { Project } from '@/types';
+import type { BookFormat, Page, Project } from '@/types';
 import type { PageFlip } from 'page-flip';
 
 /** 书本在桌面上的可见横向范围（相对书盒左缘） */
@@ -28,6 +33,13 @@ interface BookSpan {
 
 // 启动守卫在 StrictMode 下会跑两遍，提示只弹一次
 let folderGuardAlerted = false;
+
+/** 首屏优先渲染的页数：封面 + 前两个跨页，翻开书立刻有内容 */
+const FIRST_SCREEN_PAGES = 6;
+
+/** 还没画好的页先放 1×1 透明占位，后台画完再换 */
+const PAGE_PLACEHOLDER =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 /**
  * 根据当前页计算书本可见范围
@@ -52,6 +64,20 @@ export default function Viewer() {
   const pageFlipRef = useRef<PageFlip | null>(null);
   // 页面图现在是 object URL（比 dataURL 少一层 base64 编解码），用完要还回去
   const pageUrlsRef = useRef<string[]>([]);
+  // 后台渲染的代号：重新渲染 / 离开页面后，旧任务看到代号变了就停
+  const renderRunRef = useRef(0);
+  // 用户正在翻页动画里：后台渲染先让路，别和动画抢主线程
+  const isFlippingRef = useRef(false);
+  // 翻页状态兜底：万一 read 事件没来，后台不能永远停着
+  const flipIdleTimerRef = useRef<number | null>(null);
+  // 书的每页 <img>（按页序）：后台画好的页直接换 src，不重建书
+  const pageImgRefs = useRef<(HTMLImageElement | null)[]>([]);
+  // 每页当前最新的图（后台画好会更新）。重建书时必须用它 —— pageImages state
+  // 只在首屏设过一次，后面的位置还是 GIF 占位；点「放大」（改 bookSize 重建书）
+  // 或窗口 resize 时若照 state 建 img，后半本书就会退回空白。
+  const pageImageUrlsRef = useRef<string[]>([]);
+  // 书还没建好时先排队；建好后统一补上
+  const pendingPageImagesRef = useRef(new Map<number, string>());
   const [project, setProject] = useState<Project | null>(null);
   const [pageImages, setPageImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +117,9 @@ export default function Viewer() {
   // 所以这里能一次清干净。
   useEffect(
     () => () => {
+      // 让还在跑的后台渲染停下来（它要接着往已经离开的页面里画）
+      renderRunRef.current++;
+      if (flipIdleTimerRef.current !== null) window.clearTimeout(flipIdleTimerRef.current);
       pageUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
       pageUrlsRef.current = [];
     },
@@ -117,9 +146,36 @@ export default function Viewer() {
     })();
   }, [projectId, dispatch, navigate]);
 
+  /** 标记「用户正在翻页」，后台批次据此让路 */
+  function markFlipping(busy: boolean) {
+    if (flipIdleTimerRef.current !== null) {
+      window.clearTimeout(flipIdleTimerRef.current);
+      flipIdleTimerRef.current = null;
+    }
+    isFlippingRef.current = busy;
+    if (busy) {
+      flipIdleTimerRef.current = window.setTimeout(() => {
+        isFlippingRef.current = false;
+        flipIdleTimerRef.current = null;
+      }, 1200);
+    }
+  }
+
   // 渲染所有页面为图片
   async function renderAllPages(p: Project) {
     setLoading(true);
+    const runId = ++renderRunRef.current;
+    pendingPageImagesRef.current.clear();
+
+    // 用户翻页时让后台的 Worker 池也停下（不派新任务）。缩图是满核的
+    // JPEG 解码 + 缩放，翻页动画要在同一批 CPU 上出帧，抢着跑就掉帧——
+    // 实测同样一次首次翻开：后台在跑时 40ms 的帧，后台做完后只有 17ms。
+    const waitWhileFlipping = async () => {
+      while (isFlippingRef.current) {
+        if (runId !== renderRunRef.current) return;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    };
 
     // 预览图只按「屏幕上真正会显示的大小」渲染，不再固定 150dpi。
     // 书页正常显示约 450px 宽，150dpi 却会画到 874×1240 —— 多出来的像素在
@@ -143,40 +199,136 @@ export default function Viewer() {
     );
     const dpi = (targetPagePx / p.format.width) * 25.4;
 
-    // 图片、艺术字体、静态背景图并行准备好：
-    // 字体晚到会让预览图用系统字体顶替，背景图晚到会直接缺一块、之后再没机会补
-    const [assets] = await Promise.all([
-      decodeAssets(collectAssetIds(p.pages)),
+    // 首屏优先：先把封面和前两个跨页用到的图准备好，书立刻就能出现；
+    // 其余的图在后台继续准备、画好一页补一页（见下面的后台任务）。
+    // 需求尺寸仍按全部页面算（decodePreviewAssets 内部统一算），
+    // 同一张照片在后面的页里用得更大时也不会缩错。
+    const firstIds = collectImageIdsForPages(p.pages, FIRST_SCREEN_PAGES);
+    const [firstAssets] = await Promise.all([
+      decodePreviewAssets(p.pages, p.format, dpi, { onlyIds: firstIds, waitWhileBusy: waitWhileFlipping }),
+      // 字体/静态背景要按全部页准备好，晚到就会被系统字体或空白顶替
       ensureFontsLoaded(p.pages),
       ensureStaticBackgroundsLoaded(p.pages),
     ]);
+    if (runId !== renderRunRef.current) return;
 
-    const images: string[] = [];
-    for (const page of p.pages) {
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(mmToPx(p.format.width, dpi));
-      canvas.height = Math.round(mmToPx(p.format.height, dpi));
-      const ctx = canvas.getContext('2d')!;
+    const total = p.pages.length;
+    const firstCount = Math.min(FIRST_SCREEN_PAGES, total);
+    // 还没画好的页先放占位，等后台画完逐页换掉
+    const images: string[] = new Array(total).fill(PAGE_PLACEHOLDER);
 
-      // 页面怎么画只有 engine/drawPageContent 这一份实现（编辑器主画布、缩略图
-      // 和这里都走它），别再在页面里另写一套 —— 之前那套就漏了旋转和 cover 裁剪。
-      drawPageContent(ctx, page, p.format, dpi, assets);
+    // 首屏这几页一起画、一起编码（编码在后端线程，彼此重叠）
+    await Promise.all(
+      p.pages.slice(0, firstCount).map(async (page, i) => {
+        const url = await renderPageImage(page, p.format, dpi, firstAssets);
+        if (url) images[i] = url;
+      })
+    );
+    if (runId !== renderRunRef.current) return;
 
-      // 用 toBlob 而不是 toDataURL：编码交给后台线程，主线程不用停下来等。
-      // toDataURL 是同步的，每页都要把主线程按住几十毫秒，页数一多就是实打实的一秒多；
-      // 而且产出的 base64 比原图大三分之一，塞进 <img> 还得再解一遍 base64。
-      const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, 'image/jpeg', 0.9)
-      );
-      if (blob) {
-        const url = URL.createObjectURL(blob);
-        pageUrlsRef.current.push(url);
-        images.push(url);
+    pageImageUrlsRef.current = images.slice();
+    setPageImages(images);
+    setTotalPages(total);
+
+    // 后台：准备剩下的图 → 画剩下的页 → 每批画完直接换到书的 img 上。
+    // 不重建书（重建会把正在看的页弹回封面），只换 <img> 的 src。
+    //
+    // 分组推进：一次只准备接下来二十来页要用的图，画完再准备下一组。
+    // 要是一次把所有图都缩完再画（一百多张 12MP 要五六秒），用户翻到第 7 页
+    // 时后面还全是占位；分组之后每两秒左右就有一批页补进来，翻页基本跟得上。
+    void (async () => {
+      try {
+        const allAssets: Map<string, PreviewImage> = new Map(firstAssets);
+        const prepared = new Set(firstIds);
+        const PREPARE_PAGES = 10;
+        // 一批 4 页的同步绘制会挤进同一帧（实测 90ms 长任务、105ms 的帧），
+        // 用户正好翻页时就是肉眼可见的一顿。2 页一批把单次占用压到一半以下。
+        const RENDER_BATCH = 2;
+
+        for (let start = firstCount; start < total; start += PREPARE_PAGES) {
+          if (runId !== renderRunRef.current) return;
+          const end = Math.min(start + PREPARE_PAGES, total);
+          const groupPages = p.pages.slice(start, end);
+          const groupIds = collectImageIdsForPages(groupPages, groupPages.length);
+          const groupAssets = await decodePreviewAssets(p.pages, p.format, dpi, {
+            onlyIds: groupIds,
+            skipIds: prepared,
+            waitWhileBusy: waitWhileFlipping,
+          });
+          if (runId !== renderRunRef.current) return;
+          for (const [id, img] of groupAssets) {
+            allAssets.set(id, img);
+            prepared.add(id);
+          }
+
+          // 这一组的页面按小批画，画好一批就换上
+          for (let cursor = start; cursor < end; cursor += RENDER_BATCH) {
+            if (runId !== renderRunRef.current) return;
+            // 用户正在翻页：先等动画走完，别把绘制塞进动画的帧里
+            while (isFlippingRef.current) {
+              if (runId !== renderRunRef.current) return;
+              await new Promise((r) => setTimeout(r, 100));
+            }
+            const batch = p.pages.slice(cursor, Math.min(cursor + RENDER_BATCH, end));
+            await Promise.all(
+              batch.map(async (page, offset) => {
+                const url = await renderPageImage(page, p.format, dpi, allAssets);
+                if (url) {
+                  pendingPageImagesRef.current.set(cursor + offset, url);
+                  // 同步记下最新图，重建书（放大 / resize）时用得上
+                  pageImageUrlsRef.current[cursor + offset] = url;
+                }
+              })
+            );
+            if (runId !== renderRunRef.current) return;
+            applyPendingPageImages();
+          }
+        }
+      } catch (err) {
+        console.error('后台渲染剩余页面失败:', err);
+      }
+    })();
+  }
+
+  /** 画一页并编码成 object URL（页面怎么画只有 drawPageContent 这一份实现） */
+  async function renderPageImage(
+    page: Page,
+    format: BookFormat,
+    dpi: number,
+    assets: Map<string, PreviewImage>
+  ): Promise<string | null> {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(mmToPx(format.width, dpi));
+    canvas.height = Math.round(mmToPx(format.height, dpi));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    drawPageContent(ctx, page, format, dpi, assets);
+
+    // 用 toBlob 而不是 toDataURL：编码交给后台线程，主线程不用停下来等。
+    // toDataURL 是同步的，每页都要把主线程按住几十毫秒，页数一多就是实打实的一秒多；
+    // 而且产出的 base64 比原图大三分之一，塞进 <img> 还得再解一遍 base64。
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.9)
+    );
+    if (!blob) return null;
+    const url = URL.createObjectURL(blob);
+    pageUrlsRef.current.push(url);
+    return url;
+  }
+
+  /** 把后台画好的页换到书的 img 上；书还没建好就先排队，等建好时统一补 */
+  function applyPendingPageImages() {
+    for (const [index, url] of pendingPageImagesRef.current) {
+      const img = pageImgRefs.current[index];
+      if (img) {
+        img.src = url;
+        // 提前解码：否则用户翻到这一页时才开始解 800×1135 的 JPEG，
+        // 翻页动画会顿一下（和首次翻开同一个原因）
+        void img.decode().catch(() => {});
+        pendingPageImagesRef.current.delete(index);
       }
     }
-
-    setPageImages(images);
-    setTotalPages(images.length);
   }
 
   // 计算书页尺寸
@@ -216,6 +368,7 @@ export default function Viewer() {
 
     const container = containerRef.current;
     container.innerHTML = '';
+    pageImgRefs.current = [];
 
     // PageFlip 的 destroy() 里有 `this.block.remove()`，block 就是构造时传进去的
     // 那个元素。如果直接把 React 管的 container 传进去，destroy 会把 container
@@ -253,7 +406,11 @@ export default function Viewer() {
       page.dataset.index = String(i);
 
       const img = document.createElement('img');
-      img.src = pageImages[i];
+      // 用最新的图，不用 pageImages（那里面首屏之后的页还是占位）
+      img.src = pageImageUrlsRef.current[i] ?? pageImages[i];
+      img.dataset.page = String(i);
+      // 后台画好的页直接换这张 img 的 src（不重建书）
+      pageImgRefs.current[i] = img;
       img.style.width = '100%';
       img.style.height = '100%';
       img.style.objectFit = 'cover';
@@ -291,7 +448,15 @@ export default function Viewer() {
       })
     );
 
-    Promise.all(imgPromises).then(() => {
+    // 预解码页面图：页面展开前是 display:none，浏览器不会解码里面的 JPEG，
+    // 第一次翻开时才解 —— 800×1135 的两页要 40ms 上下，翻页动画第一帧就会顿
+    // 一下（实测首次翻开最长一帧 60ms，预解码后降到 33ms 以内）。等它们解完
+    // 再建书，代价是 loading 多几十毫秒，用户看不见。
+    const decodePromises = Array.from(host.querySelectorAll('img')).map((img) =>
+      img.decode ? img.decode().catch(() => {}) : Promise.resolve()
+    );
+
+    Promise.all([...imgPromises, ...decodePromises]).then(() => {
       import('page-flip').then(({ PageFlip }) => {
         // 异步期间 effect 已经重跑过：容器里的东西早被清掉换成新的了，
         // 这次的结果直接作废，别在同一个容器上再建一套
@@ -354,14 +519,18 @@ export default function Viewer() {
           const s = e.data as string;
           if (s === 'flipping') {
             // 单击翻页走这条路，这时方向已经定了
+            markFlipping(true);
             setIsOpening(true);
             updateFlipToClosed();
           } else if (s === 'user_fold') {
             // 拖拽翻页只发 user_fold、不发 flipping，方向也得算。
             // 但 fold() 是先发状态、后建 calc 的，这一拍方向还没出来，等一个微任务再读。
+            markFlipping(true);
             setIsOpening(true);
             queueMicrotask(updateFlipToClosed);
           } else if (s === 'read') {
+            // 翻页动画结束（page-flip 只在 finishAnimation 后发 read）
+            markFlipping(false);
             setIsOpening(false);
             setFlipToClosed(false);
           }
@@ -379,6 +548,8 @@ export default function Viewer() {
         } else {
           setCurrentPage(0);
         }
+        // 书建好之前后台已经画完的页，现在补上
+        applyPendingPageImages();
         setLoading(false); // 初始化完成，隐藏 loading
         // 下一帧再置位，让入场过渡生效
         setTimeout(() => setEntered(true), 30);

@@ -83,12 +83,25 @@ export async function ensureStaticBackgroundsLoaded(pages: Page[]): Promise<void
  *
  * @param assets 已解码的图片，key 是 imageId / stickerId
  */
+export type RenderImage = HTMLImageElement | ImageBitmap;
+
+function imageReady(img: RenderImage): boolean {
+  // ImageBitmap 没有 complete/naturalWidth：位图存在就是就绪的
+  return 'complete' in img ? img.complete && img.naturalWidth > 0 : img.width > 0;
+}
+
+function imageSize(img: RenderImage): { width: number; height: number } {
+  return 'complete' in img
+    ? { width: img.naturalWidth, height: img.naturalHeight }
+    : { width: img.width, height: img.height };
+}
+
 export function drawPageContent(
   ctx: CanvasRenderingContext2D,
   page: Page,
   format: BookFormat,
   dpi: number,
-  assets: Map<string, HTMLImageElement>
+  assets: Map<string, RenderImage>
 ): void {
   const w = Math.ceil(mmToPx(format.width, dpi));
   const h = Math.ceil(mmToPx(format.height, dpi));
@@ -105,8 +118,9 @@ export function drawPageContent(
       // 静态资源URL：直接加载并缓存到模块级Map
       bgImg = getOrLoadStaticImage(page.background.value);
     }
-    if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
-      const crop = computeCoverCrop(bgImg.naturalWidth, bgImg.naturalHeight, w, h);
+    if (bgImg && imageReady(bgImg)) {
+      const size = imageSize(bgImg);
+      const crop = computeCoverCrop(size.width, size.height, w, h);
       ctx.drawImage(bgImg, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, w, h);
     }
   }
@@ -174,7 +188,7 @@ function drawElement(
   ctx: CanvasRenderingContext2D,
   el: Element,
   dpi: number,
-  assets: Map<string, HTMLImageElement>,
+  assets: Map<string, RenderImage>,
   pageBgColor: string
 ) {
   ctx.save();
@@ -240,7 +254,7 @@ function drawImageElement(
   ctx: CanvasRenderingContext2D,
   el: ImageElement,
   dpi: number,
-  assets: Map<string, HTMLImageElement>,
+  assets: Map<string, RenderImage>,
   pageBgColor: string
 ) {
   const x = mmToPx(el.x, dpi);
@@ -1149,7 +1163,7 @@ function drawStickerElement(
   ctx: CanvasRenderingContext2D,
   el: StickerElement,
   dpi: number,
-  assets: Map<string, HTMLImageElement>
+  assets: Map<string, RenderImage>
 ) {
   const x = mmToPx(el.x, dpi);
   const y = mmToPx(el.y, dpi);
