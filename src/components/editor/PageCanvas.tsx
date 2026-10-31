@@ -1,13 +1,61 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Page, BookFormat } from '@/types';
 import { mmToPx } from '@/utils/units';
-import { getImageAsset } from '@/utils/assetStore';
+import { getImageAsset, getImageMeta } from '@/utils/assetStore';
 import { getImageURL } from '@/utils/image';
 import { drawPageContent, isStaticBackgroundReady } from '@/engine/drawPageContent';
 import { ensureFontsLoaded } from '@/utils/fonts';
 
 /** 和主画布同一个 dpi。缩略图不另算字号，靠整体缩放，所以这个值只用来推画布高度 */
 const DPI = 96;
+
+/**
+ * 缩略图图片缓存。页面缩略图只有 90px 宽，照片图位才十几像素，200px 缩略图
+ * 绰绰有余；而原图是 4096px 的 12MP 大图，每页每张都读出来缩小一遍，
+ * 几十页的相册打开要卡好几秒。同一张照片还可能出现在多页，这里按 id 缓存
+ * 解码好的 Image，重画（翻页、冻结解冻）时直接复用。
+ */
+const pageImageCache = new Map<string, Promise<HTMLImageElement | null>>();
+
+function loadPageImage(assetId: string): Promise<HTMLImageElement | null> {
+  const cached = pageImageCache.get(assetId);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    // 优先用上传时存的 200px 缩略图
+    const meta = await getImageMeta(assetId);
+    if (meta?.thumbnail) {
+      const img = new Image();
+      img.src = meta.thumbnail;
+      await new Promise<void>((resolve) => {
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+      });
+      if (img.naturalWidth > 0) return img;
+    }
+
+    // 老数据没有缩略图：退回原图
+    const asset = await getImageAsset(assetId);
+    if (!asset) return null;
+    const img = new Image();
+    const url = getImageURL(asset);
+    img.src = url;
+    await new Promise<void>((resolve) => {
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+    });
+    // 图已经解码进 img 了，这个 objectURL 用完就撤
+    URL.revokeObjectURL(url);
+    return img.naturalWidth > 0 ? img : null;
+  })();
+
+  pageImageCache.set(assetId, promise);
+  // 失败的不要永久缓存：权限/磁盘临时问题修好后重画还能再试
+  promise.then((img) => {
+    if (!img && pageImageCache.get(assetId) === promise) pageImageCache.delete(assetId);
+  });
+  return promise;
+}
 
 interface Props {
   page: Page;
@@ -70,27 +118,17 @@ export default function PageCanvas({ page, format, width, frozen = false }: Prop
     const myId = ++drawIdRef.current;
 
     (async () => {
-      // 先把这一页用到的图片（含贴纸）全部解码好再落笔。
+      // 先把这一页用到的照片全部解码好再落笔。
       // 图片只能异步取，若边画边等，图片就会全部画在文字之后，盖住文字、图层顺序全乱。
+      // 贴纸不用图片：drawPageContent 按 stickerId 矢量绘制，不走 assets。
       const assets = new Map<string, HTMLImageElement>();
       await Promise.all(
         shown.elements
-          .filter((el) => el.type === 'image' || el.type === 'sticker')
+          .filter((el) => el.type === 'image')
           .map(async (el) => {
-            const assetId = el.type === 'image' ? el.imageId : el.stickerId;
-            if (!assetId) return;
-            const asset = await getImageAsset(assetId);
-            if (!asset) return;
-            const img = new Image();
-            const url = getImageURL(asset);
-            await new Promise<void>((resolve) => {
-              img.onload = () => resolve();
-              img.onerror = () => resolve();
-              img.src = url;
-            });
-            // 图已经解码进 img 了，这个 objectURL 用完就撤，不然每画一次漏一个
-            URL.revokeObjectURL(url);
-            assets.set(assetId, img);
+            if (el.type !== 'image' || !el.imageId) return;
+            const img = await loadPageImage(el.imageId);
+            if (img) assets.set(el.imageId, img);
           })
       );
 
