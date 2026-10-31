@@ -108,9 +108,11 @@ export default function ProjectList() {
       const firstPage = project.pages[0];
       if (firstPage) {
         try {
-          // 创建离屏 canvas（用低 DPI 加快加载）
+          // 创建离屏 canvas。封面卡片在常见屏幕上约 140~220 CSS px 宽，
+          // 高 DPI 屏物理像素再翻倍，48dpi（280×397）在放大屏上就显得发糊。
+          // 96dpi（560×794）对源缩略图（200px）仍是大材小用，绘制只多几十毫秒
           const format = PRESET_FORMATS.A5;
-          const dpi = 48; // 封面缩略图用低 DPI，加快加载
+          const dpi = 96;
           const canvas = document.createElement('canvas');
           canvas.width = Math.round((format.width / 25.4) * dpi);
           canvas.height = Math.round((format.height / 25.4) * dpi);
@@ -126,22 +128,41 @@ export default function ProjectList() {
           const imageElements = firstPage.elements.filter(el => el.type === 'image') as ImageElement[];
           const assets = new Map<string, HTMLImageElement>();
 
+          // 同一张照片在封面上可能有不同大小的图位（满版大图 vs 小拍立得），
+          // 按它在封面画布上最大的显示长边，判断 200px 缩略图够不够用
+          const neededPx = (imageId: string) =>
+            Math.max(
+              ...imageElements
+                .filter(el => el.imageId === imageId)
+                .map(el => Math.max(el.width, el.height) / 25.4 * dpi)
+            );
+
           await Promise.all(imageElements.map(async (el) => {
-            const img = new Image();
+            if (assets.has(el.imageId)) return;
+            let thumbImg: HTMLImageElement | null = null;
             const meta = await getImageMeta(el.imageId);
             if (meta?.thumbnail) {
-              img.src = meta.thumbnail;
+              thumbImg = new Image();
+              thumbImg.src = meta.thumbnail;
               await new Promise<void>((resolve) => {
-                img.onload = () => resolve();
-                img.onerror = () => resolve();
+                thumbImg!.onload = () => resolve();
+                thumbImg!.onerror = () => resolve();
               });
-              assets.set(el.imageId, img);
-              return;
+              // 缩略图长边够大，直接用（氛围感那种小图位都走这条，最快）
+              if (Math.max(thumbImg.naturalWidth, thumbImg.naturalHeight) >= neededPx(el.imageId)) {
+                assets.set(el.imageId, thumbImg);
+                return;
+              }
             }
 
-            // 老数据可能没存缩略图，退回原图（已启用文件夹时从磁盘读）
+            // 老数据没有缩略图，或者封面是满版大图、200px 缩略图撑不住画布尺寸：
+            // 退回原图（已启用文件夹时从磁盘读）
             const asset = await getImageAsset(el.imageId);
-            if (!asset) return;
+            if (!asset) {
+              if (thumbImg) assets.set(el.imageId, thumbImg);
+              return;
+            }
+            const img = new Image();
             const url = getImageURL(asset);
             img.src = url;
             await new Promise<void>((resolve) => {
@@ -152,7 +173,8 @@ export default function ProjectList() {
             });
             // 图已经解码进 img 了，objectURL 用完就撤
             URL.revokeObjectURL(url);
-            assets.set(el.imageId, img);
+            // 原图读失败（坏文件）时缩略图兜底，总比封面空着强
+            assets.set(el.imageId, img.naturalWidth > 0 ? img : (thumbImg ?? img));
           }));
 
           // 封面上的艺术字体要先加载好，不然画出来的系统字体会被拍进封面图；
