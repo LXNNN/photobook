@@ -325,10 +325,10 @@ export default function Viewer() {
     };
 
     // 预览图只按「屏幕上真正会显示的大小」渲染，不再固定 150dpi。
-    // 书页正常显示约 450px 宽，150dpi 却会画到 874×1240 —— 多出来的像素在
+    // 书页正常显示约 410~450px 宽，150dpi 却会画到 874×1240 —— 多出来的像素在
     // 翻页动画里每帧都要重新缩放光栅化，弱显卡上就是卡顿的直接来源，加载也慢。
     // 渲染尺寸和下面 calcSize 的放大镜分支用同一套算法（放大镜是屏幕上书页
-    // 最大的时候，1080p 窗口约 533px 宽），再乘 PREVIEW_SUPERSAMPLE 留一点
+    // 最大的时候，1080p 窗口约 660px 宽），再乘 PREVIEW_SUPERSAMPLE 留一点
     // 超采样余量：旋转照片的斜边、细笔画在缩放时才有平滑过渡，不显毛糙。
     // 高 DPI 屏按 devicePixelRatio 补回来，封顶仍是 150dpi。
     const ratio = p.format.width / p.format.height;
@@ -488,9 +488,20 @@ export default function Viewer() {
   useEffect(() => {
     const calcSize = () => {
       // 放大镜里书要铺满整个窗口（上下各留 72px 给关闭键和提示条，左右各留 64px）；
-      // 平时预览则把整本书夹在 900px 内 —— 屏幕上看到多大就等于印出来多大，
+      // 平时预览：窄于 1320 按窗口宽度等比缩小（1280 → 800 × 568）；
+      // 1320 ~ 1440（她的笔记本窗口 1440 × 791）以书高 585px 为基准
+      // （宽 = 585 × 296/210 ≈ 825，即 825 × 585）；
+      // 1440 往上线性回到 900，1920 及以上的桌面就是 900 × 639（和最早一样）。
+      // 高度不够时再按 maxH 夹紧 —— 屏幕上看到多大就等于印出来多大，
       // 书本身该多大还是多大，放大只是临时看一次
-      const maxW = magnified ? window.innerWidth - 128 : Math.min(window.innerWidth - 200, 900);
+      const winW = window.innerWidth;
+      const previewCap =
+        winW <= 1440
+          ? Math.min(825, (winW * 850) / 1360)
+          : Math.min(900, 825 + ((winW - 1440) / 480) * 75);
+      const maxW = magnified
+        ? window.innerWidth - 128
+        : Math.min(window.innerWidth - 200, previewCap);
       const maxH = magnified ? window.innerHeight - 144 : window.innerHeight - 160;
       const ratio = 148 / 210;
       let pageW = Math.min(maxW / 2, maxH / ratio);
