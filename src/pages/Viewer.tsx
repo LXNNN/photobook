@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, type CSSProperties } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch } from '@/store';
 import { setCurrentProject } from '@/store/projectSlice';
@@ -23,7 +23,6 @@ import { drawPageContent, collectAssetIds, ensureStaticBackgroundsLoaded } from 
 import { ensureFontsLoaded } from '@/utils/fonts';
 import { jsPDF } from 'jspdf';
 import type { BookFormat, Page, Project } from '@/types';
-import type { PageFlip } from 'page-flip';
 
 /** 书本在桌面上的可见横向范围（相对书盒左缘） */
 interface BookSpan {
@@ -40,6 +39,150 @@ const FIRST_SCREEN_PAGES = 6;
 /** 还没画好的页先放 1×1 透明占位，后台画完再换 */
 const PAGE_PLACEHOLDER =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/** 一次翻页动画的时长（毫秒） */
+const FLIP_DURATION = 800;
+
+/** 一次翻页：从哪一跨页翻到哪一跨页 */
+interface FlipAnim {
+  dir: 'next' | 'prev';
+  from: number; // spreadGroups 的下标
+  to: number;
+}
+
+/**
+ * 一组跨页里每页落在书盒的哪半边：
+ * 第 0 组是封面，单独在右半；其余的落单页（总页数为偶数时的末页）单独在左半。
+ */
+function spreadPosition(
+  group: number[] | undefined,
+  index: number
+): { left?: number; right?: number } {
+  if (!group || group.length === 0) return {};
+  if (group.length === 1) return index === 0 ? { right: group[0] } : { left: group[0] };
+  return { left: group[0], right: group[1] };
+}
+
+/**
+ * 一页的纸面：白底 + 页面图 + 靠书脊一侧的中缝灰线。
+ * 页面内容早就被 drawPageContent 画成了整页的图，这里不需要再画别的东西。
+ */
+function PageFace({ src, crease }: { src?: string; crease: 'left' | 'right' }) {
+  // 这一侧没有页面（封面态的左半、结尾态的右半、翻页时空着的那半边）：
+  // 什么都不画，露出桌面 —— 画一块白底会凭空多出半页白纸
+  if (!src) return null;
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: '#fff', overflow: 'hidden' }}>
+      <img
+        src={src}
+        alt=""
+        draggable={false}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          display: 'block',
+          pointerEvents: 'none',
+          userSelect: 'none',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          width: 1,
+          background: 'rgba(150,145,135,0.35)',
+          ...(crease === 'left' ? { left: 0 } : { right: 0 }),
+        }}
+      />
+    </div>
+  );
+}
+
+/** 摊开在书盒里的静态页面（落单时另一边空着） */
+function SpreadLayer({
+  left,
+  right,
+  images,
+}: {
+  left?: number;
+  right?: number;
+  images: string[];
+}) {
+  return (
+    <>
+      <div style={{ position: 'absolute', left: 0, top: 0, width: '50%', height: '100%' }}>
+        <PageFace src={left === undefined ? undefined : images[left]} crease="right" />
+      </div>
+      <div style={{ position: 'absolute', left: '50%', top: 0, width: '50%', height: '100%' }}>
+        <PageFace src={right === undefined ? undefined : images[right]} crease="left" />
+      </div>
+    </>
+  );
+}
+
+/**
+ * 正在翻动的那张纸：整页绕书脊（书盒中线）竖直旋转 180°，
+ * 正面是翻动前朝上的那页，背面是翻过去之后朝上的那页。
+ *
+ * 这是「像第一页翻开那样直着翻」的实现：原来的 page-flip 是折角纸模型
+ * （折角永远从页面上下 1/10 处起、折线必然斜），内页翻起来是个斜折角；
+ * 换成 CSS 3D 后每次翻页都是一整张纸绕着书脊转，和封面翻开是一个动作。
+ */
+function FlipSheet({
+  anim,
+  front,
+  back,
+  images,
+  sheetRef,
+}: {
+  anim: FlipAnim;
+  front?: number;
+  back?: number;
+  images: string[];
+  sheetRef: { current: HTMLDivElement | null };
+}) {
+  const isNext = anim.dir === 'next';
+  const face: CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    background: '#fff',
+    overflow: 'hidden',
+    backfaceVisibility: 'hidden',
+    WebkitBackfaceVisibility: 'hidden',
+  };
+  return (
+    <div
+      ref={sheetRef}
+      style={{
+        position: 'absolute',
+        top: 0,
+        height: '100%',
+        width: '50%',
+        left: isNext ? '50%' : 0,
+        // 向后翻：绕右页的左边缘（书脊）转；向前翻：绕左页的右边缘转
+        transformOrigin: isNext ? 'left center' : 'right center',
+        transformStyle: 'preserve-3d',
+        willChange: 'transform',
+        zIndex: 5,
+      }}
+    >
+      <div style={face}>
+        <PageFace
+          src={front === undefined ? undefined : images[front]}
+          crease={isNext ? 'left' : 'right'}
+        />
+      </div>
+      <div style={{ ...face, transform: 'rotateY(180deg)' }}>
+        <PageFace
+          src={back === undefined ? undefined : images[back]}
+          crease={isNext ? 'right' : 'left'}
+        />
+      </div>
+    </div>
+  );
+}
 
 /**
  * 根据当前页计算书本可见范围
@@ -61,45 +204,45 @@ export default function Viewer() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const containerRef = useRef<HTMLDivElement>(null);
-  const pageFlipRef = useRef<PageFlip | null>(null);
+  // 翻页动画里的那张纸（CSS 3D 旋转）
+  const flipperRef = useRef<HTMLDivElement | null>(null);
+  // 同步的翻页状态：state 是异步的，快速连点要用 ref 挡
+  const flipRef = useRef<FlipAnim | null>(null);
   // 页面图现在是 object URL（比 dataURL 少一层 base64 编解码），用完要还回去
   const pageUrlsRef = useRef<string[]>([]);
   // 后台渲染的代号：重新渲染 / 离开页面后，旧任务看到代号变了就停
   const renderRunRef = useRef(0);
   // 用户正在翻页动画里：后台渲染先让路，别和动画抢主线程
   const isFlippingRef = useRef(false);
-  // 翻页状态兜底：万一 read 事件没来，后台不能永远停着
+  // 翻页状态兜底：万一动画没正常结束，后台不能永远停着
   const flipIdleTimerRef = useRef<number | null>(null);
-  // 书的每页 <img>（按页序）：后台画好的页直接换 src，不重建书
+  // 每页一张常驻的 <img>（藏在书外）：后台画好的页直接换 src 并提前解码，
+  // 翻页动画第一帧才不会撞上 800×1135 JPEG 的解码
   const pageImgRefs = useRef<(HTMLImageElement | null)[]>([]);
-  // 每页当前最新的图（后台画好会更新）。重建书时必须用它 —— pageImages state
-  // 只在首屏设过一次，后面的位置还是 GIF 占位；点「放大」（改 bookSize 重建书）
-  // 或窗口 resize 时若照 state 建 img，后半本书就会退回空白。
+  // 每页当前最新的图（后台画好会更新）
   const pageImageUrlsRef = useRef<string[]>([]);
-  // 书还没建好时先排队；建好后统一补上
+  // 后台画好的页先排队，统一换到 state
   const pendingPageImagesRef = useRef(new Map<number, string>());
   const [project, setProject] = useState<Project | null>(null);
   const [pageImages, setPageImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
   const [bookSize, setBookSize] = useState({ w: 0, h: 0 }); // 初始为0，等计算完成
-  const [span, setSpan] = useState<BookSpan>({ left: 0, right: 0 });
-  const [isOpening, setIsOpening] = useState(false); // 正在从闭合态展开
-  const [flipToClosed, setFlipToClosed] = useState(false); // 这趟翻页的落点是"只有一页"的合起态
+  // 当前跨页（spreadGroups 的下标），0 = 封面
+  const [currentSpread, setCurrentSpread] = useState(0);
+  // 正在播的翻页动画；null = 静止
+  const [flip, setFlip] = useState<FlipAnim | null>(null);
   const [entered, setEntered] = useState(false); // 入场动画完成
   const [exportMenuOpen, setExportMenuOpen] = useState(false); // 「📥 导出」的小菜单
   const [exporting, setExporting] = useState(false); // 导出中（PDF / 图片都算）
   // 图片导出的进度（PDF 导出没这个，导出中显示"⏳ 导出中 N/M"）
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
   const [magnified, setMagnified] = useState(false); // 放大镜开着
-  // 当前页码的镜像。书是按 bookSize 重建的（放大 / 退出放大 / 窗口尺寸变了都会
-  // 重建一次），重建后要翻回原来那一页 —— 但那个 effect 绝不能把 currentPage
-  // 写进依赖里，它一跑就会把正在看的书拆了重做
-  const currentPageRef = useRef(0);
-  useEffect(() => {
-    currentPageRef.current = currentPage;
-  }, [currentPage]);
+
+  // ===== 跨页与页码（全部从 pageImages / currentSpread 推导，不另存一份） =====
+  const totalPages = pageImages.length;
+  const spreads = useMemo(() => spreadGroups(totalPages), [totalPages]);
+  const currentSpreadPages = spreads[currentSpread] ?? [];
+  const currentPage = currentSpreadPages[0] ?? 0;
 
   // 启动时已启用文件夹模式但还没连上：不进入预览（§5.3），先回书架重连
   useEffect(() => {
@@ -147,7 +290,7 @@ export default function Viewer() {
   }, [projectId, dispatch, navigate]);
 
   /** 标记「用户正在翻页」，后台批次据此让路 */
-  function markFlipping(busy: boolean) {
+  const markFlipping = useCallback((busy: boolean) => {
     if (flipIdleTimerRef.current !== null) {
       window.clearTimeout(flipIdleTimerRef.current);
       flipIdleTimerRef.current = null;
@@ -159,13 +302,17 @@ export default function Viewer() {
         flipIdleTimerRef.current = null;
       }, 1200);
     }
-  }
+  }, []);
 
   // 渲染所有页面为图片
   async function renderAllPages(p: Project) {
     setLoading(true);
     const runId = ++renderRunRef.current;
     pendingPageImagesRef.current.clear();
+    setCurrentSpread(0);
+    setFlip(null);
+    flipRef.current = null;
+    markFlipping(false);
 
     // 用户翻页时让后台的 Worker 池也停下（不派新任务）。缩图是满核的
     // JPEG 解码 + 缩放，翻页动画要在同一批 CPU 上出帧，抢着跑就掉帧——
@@ -228,7 +375,6 @@ export default function Viewer() {
 
     pageImageUrlsRef.current = images.slice();
     setPageImages(images);
-    setTotalPages(total);
 
     // 后台：准备剩下的图 → 画剩下的页 → 每批画完直接换到书的 img 上。
     // 不重建书（重建会把正在看的页弹回封面），只换 <img> 的 src。
@@ -317,18 +463,25 @@ export default function Viewer() {
     return url;
   }
 
-  /** 把后台画好的页换到书的 img 上；书还没建好就先排队，等建好时统一补 */
+  /** 把后台画好的页换进 state（页面 img 和翻页动画都从 state 取图） */
   function applyPendingPageImages() {
-    for (const [index, url] of pendingPageImagesRef.current) {
+    if (pendingPageImagesRef.current.size === 0) return;
+    const updates = Array.from(pendingPageImagesRef.current);
+    pendingPageImagesRef.current.clear();
+    for (const [index, url] of updates) {
       const img = pageImgRefs.current[index];
       if (img) {
         img.src = url;
         // 提前解码：否则用户翻到这一页时才开始解 800×1135 的 JPEG，
         // 翻页动画会顿一下（和首次翻开同一个原因）
         void img.decode().catch(() => {});
-        pendingPageImagesRef.current.delete(index);
       }
     }
+    setPageImages((prev) => {
+      const next = prev.slice();
+      for (const [index, url] of updates) next[index] = url;
+      return next;
+    });
   }
 
   // 计算书页尺寸
@@ -358,255 +511,92 @@ export default function Viewer() {
     return () => window.removeEventListener('resize', calcSize);
   }, [magnified]);
 
-  // 初始化 PageFlip - 等所有准备好再开始
+  // 书第一次能显示出来：关掉 loading、播入场过渡。
+  // 别把 loading 写进依赖里 —— setLoading(false) 会触发 effect 重跑，
+  // 清理函数会把下面那个 setEntered 的定时器一起清掉，入场过渡永远不播（书一直 opacity 0）
   useEffect(() => {
-    // 等所有条件都满足：
-    // 1. 页面图片已加载
-    // 2. 书页尺寸已计算
-    // 3. 容器已存在
-    if (pageImages.length === 0 || bookSize.w === 0 || !containerRef.current) return;
+    if (pageImages.length === 0 || bookSize.w === 0) return;
+    setLoading(false);
+    // 下一帧再置位，让入场过渡生效
+    const t = window.setTimeout(() => setEntered(true), 30);
+    return () => window.clearTimeout(t);
+  }, [pageImages.length, bookSize.w]);
 
-    const container = containerRef.current;
-    container.innerHTML = '';
-    pageImgRefs.current = [];
-
-    // PageFlip 的 destroy() 里有 `this.block.remove()`，block 就是构造时传进去的
-    // 那个元素。如果直接把 React 管的 container 传进去，destroy 会把 container
-    // 本身从 DOM 里摘掉，而 React 并不知道它没了 —— 之后的渲染只会继续往这个
-    // 游离节点里画，书就再也不出现了（改窗口大小后整本书消失就是这个）。
-    // 所以自己造一层壳交给它，让它删自己的壳。
-    const host = document.createElement('div');
-    host.style.cssText = 'position:absolute;inset:0;';
-    container.appendChild(host);
-
-    // 实例是在异步链里建的（要先等图片加载、再动态 import），cleanup 跑的时候
-    // 它可能还没出生。没有这两个变量的话：effect 一重跑 → cleanup 里 ref 还是
-    // null → 没销毁任何东西 → 上一次的异步链照样把 PageFlip 建出来，于是同一个
-    // 容器上挂了两套书。两套书各有一套 rAF 渲染循环、各自记着自己的页码，
-    // 就会互相盖来盖去、露出"残页"（末页看着像跨页就是这么来的）。
-    // bookSize 变一次、窗口 resize、StrictMode 挂载两遍都会触发重跑，
-    // 实测 8 次加载有 6 次撞上。
-    let cancelled = false;
-    let created: PageFlip | null = null;
-
-    const n = pageImages.length;
-
-    // 创建页面元素
-    const pageElements: HTMLElement[] = [];
-    for (let i = 0; i < n; i++) {
-      const page = document.createElement('div');
-      // 初始隐藏：PageFlip 只对当前跨页和翻页中的页面调用 simpleDraw/draw（都会重写 style 并设 display:block），
-      // 非激活页若可见会以 100% 宽的白底堆在容器里，闭合态时左侧会露出一个"空白页"
-      page.style.display = 'none';
-      page.style.width = '100%';
-      page.style.height = '100%';
-      page.style.overflow = 'hidden';
-      page.style.background = '#fff';
-      page.style.position = 'relative';
-      page.dataset.index = String(i);
-
-      const img = document.createElement('img');
-      // 用最新的图，不用 pageImages（那里面首屏之后的页还是占位）
-      img.src = pageImageUrlsRef.current[i] ?? pageImages[i];
-      img.dataset.page = String(i);
-      // 后台画好的页直接换这张 img 的 src（不重建书）
-      pageImgRefs.current[i] = img;
-      img.style.width = '100%';
-      img.style.height = '100%';
-      img.style.objectFit = 'cover';
-      img.style.display = 'block';
-      page.appendChild(img);
-
-      // ===== 中缝折线：浅灰色细线 =====
-      // 页序（showCover）：封面(0)单独在右、奇数页在左、偶数页在右、n 为偶数时末页单独在左
-      const isLeftSide = i % 2 === 1 || (i === n - 1 && n % 2 === 0);
-      const edge = isLeftSide ? 'right' : 'left'; // 靠书脊的一侧
-
-      const creaseLine = document.createElement('div');
-      creaseLine.style.position = 'absolute';
-      creaseLine.style.top = '0';
-      creaseLine.style.bottom = '0';
-      creaseLine.style.width = '1px';
-      if (edge === 'right') creaseLine.style.right = '0';
-      else creaseLine.style.left = '0';
-      creaseLine.style.background = 'rgba(150,145,135,0.35)';
-      creaseLine.style.pointerEvents = 'none';
-      page.appendChild(creaseLine);
-
-      host.appendChild(page);
-      pageElements.push(page);
+  // 页面图提前解码：翻页动画第一帧才不会撞上 800×1135 JPEG 的解码
+  useEffect(() => {
+    for (const img of pageImgRefs.current) {
+      if (img?.complete) void img.decode().catch(() => {});
     }
+  }, [pageImages]);
 
-    // 等待所有图片加载完成
-    const imgPromises = Array.from(host.querySelectorAll('img')).map(
-      (img) => new Promise<void>((resolve) => {
-        if (img.complete) resolve();
-        else {
-          img.onload = () => resolve();
-          img.onerror = () => resolve();
-        }
-      })
+  /** 翻页动画结束：落到目标跨页 */
+  const finishFlip = useCallback(() => {
+    const anim = flipRef.current;
+    if (!anim) return;
+    flipRef.current = null;
+    markFlipping(false);
+    setCurrentSpread(anim.to);
+    setFlip(null);
+  }, [markFlipping]);
+
+  // 翻页动画：整张纸绕书脊转 180°（CSS 3D）。
+  // 用 Web Animations API 而不是 CSS transition —— 启动/收尾都在这里显式控制，
+  // StrictMode 重跑 effect 时 cancel 掉重来即可，不会留下半截状态。
+  useEffect(() => {
+    if (!flip) return;
+    const sheet = flipperRef.current;
+    if (!sheet) return;
+    const angle = flip.dir === 'next' ? -180 : 180;
+    const animation = sheet.animate(
+      [{ transform: 'rotateY(0deg)' }, { transform: `rotateY(${angle}deg)` }],
+      { duration: FLIP_DURATION, easing: 'ease-in-out', fill: 'forwards' }
     );
+    animation.onfinish = finishFlip;
+    return () => animation.cancel();
+  }, [flip, finishFlip]);
 
-    // 预解码页面图：页面展开前是 display:none，浏览器不会解码里面的 JPEG，
-    // 第一次翻开时才解 —— 800×1135 的两页要 40ms 上下，翻页动画第一帧就会顿
-    // 一下（实测首次翻开最长一帧 60ms，预解码后降到 33ms 以内）。等它们解完
-    // 再建书，代价是 loading 多几十毫秒，用户看不见。
-    const decodePromises = Array.from(host.querySelectorAll('img')).map((img) =>
-      img.decode ? img.decode().catch(() => {}) : Promise.resolve()
-    );
-
-    Promise.all([...imgPromises, ...decodePromises]).then(() => {
-      import('page-flip').then(({ PageFlip }) => {
-        // 异步期间 effect 已经重跑过：容器里的东西早被清掉换成新的了，
-        // 这次的结果直接作废，别在同一个容器上再建一套
-        if (cancelled) return;
-
-        const pageFlip = new PageFlip(host, {
-          width: bookSize.w / 2,
-          height: bookSize.h,
-          size: 'fixed',
-          drawShadow: false,
-          flippingTime: 800,
-          usePortrait: false,
-          startZIndex: 0,
-          autoSize: false,
-          maxShadowOpacity: 0,
-          showCover: true,
-          mobileScrollSupport: true,
-          swipeDistance: 50,
-          clickEventForward: true,
-          useMouseEvents: true,
-          // 关闭悬停角部的折叠预览效果，只有点击才翻页
-          showPageCorners: false,
-        });
-
-        created = pageFlip;
-        pageFlip.loadFromHTML(pageElements);
-        pageFlipRef.current = pageFlip;
-
-        // 初始：闭合态，书在右半
-        setSpan(computeSpan(0, n, bookSize.w));
-
-        // 手动显示第一页（封面）
-        if (pageElements.length > 0) {
-          pageElements[0].style.display = 'block';
-        }
-
-        pageFlip.on('flip', (e) => {
-          const idx = typeof e.data === 'number' ? e.data : pageFlip.getCurrentPageIndex();
-          setCurrentPage(idx);
-          setSpan(computeSpan(idx, n, bookSize.w));
-        });
-
-        // 这趟翻页翻完，会不会落到"只有一页"的合起状态（封面 0、或 n 为偶数时的末页 n-1）？
-        // 落点是合起态的话，摊开时那片整体投影从点击那一刻就该撤掉（见下面的 showSpreadShadow）。
-        // 方向问 page-flip 自己，不按点击位置猜：FlipDirection.FORWARD = 0、BACK = 1。
-        // 能翻到合起态的只有两种走法：从封面往回翻（当前在第 1 页）、
-        // 从倒数第二个跨页往后翻到末页（当前在 n-3）。n 为奇数时没有单独一页的末页，
-        // 这时 n-3 不是跨页起始页，条件自然不成立（n=3 是例外，n-3=0 正好是封面，所以还要 n 为偶数）。
-        const updateFlipToClosed = () => {
-          const calc = pageFlip.getFlipController()?.getCalculation();
-          if (!calc) return; // 方向还没定（比如这个方向翻不动），保持原样
-          const from = pageFlip.getCurrentPageIndex();
-          setFlipToClosed(
-            calc.getDirection() === 0 ? n % 2 === 0 && from === n - 3 : from === 1
-          );
-        };
-
-        // 翻页状态机：按下/翻页中 → 把"居中+倾斜"复位，与翻页动画同步
-        pageFlip.on('changeState', (e) => {
-          const s = e.data as string;
-          if (s === 'flipping') {
-            // 单击翻页走这条路，这时方向已经定了
-            markFlipping(true);
-            setIsOpening(true);
-            updateFlipToClosed();
-          } else if (s === 'user_fold') {
-            // 拖拽翻页只发 user_fold、不发 flipping，方向也得算。
-            // 但 fold() 是先发状态、后建 calc 的，这一拍方向还没出来，等一个微任务再读。
-            markFlipping(true);
-            setIsOpening(true);
-            queueMicrotask(updateFlipToClosed);
-          } else if (s === 'read') {
-            // 翻页动画结束（page-flip 只在 finishAnimation 后发 read）
-            markFlipping(false);
-            setIsOpening(false);
-            setFlipToClosed(false);
-          }
-        });
-
-        // 书是按 bookSize 重建的，而放大镜就是靠改 bookSize 实现的
-        // （点击「🔍 放大」→ 书页尺寸变大 → 这里重跑一遍）。新建的书总是从
-        // 封面开始，所以要把书翻回原来那一页，不然点一下放大就被送回封面了。
-        // 用瞬跳 turnToPage —— 这是重建、不是在翻页，不该播一段翻页动画
-        const restore = currentPageRef.current;
-        if (restore > 0) {
-          pageFlip.turnToPage(restore);
-          setCurrentPage(restore);
-          setSpan(computeSpan(restore, n, bookSize.w));
-        } else {
-          setCurrentPage(0);
-        }
-        // 书建好之前后台已经画完的页，现在补上
-        applyPendingPageImages();
-        setLoading(false); // 初始化完成，隐藏 loading
-        // 下一帧再置位，让入场过渡生效
-        setTimeout(() => setEntered(true), 30);
-      });
-    });
-
-    return () => {
-      cancelled = true;
-      // 销毁"本次"建的那个实例：ref 里放的可能是后一次 effect 建的书，
-      // 无脑 destroy() 会把新书拆掉、把旧书留在页面上
-      created?.destroy();
-      if (pageFlipRef.current === created) pageFlipRef.current = null;
-    };
-  }, [pageImages, bookSize]);
-
-
-  // ===== 翻页为什么用 flipNext / flipPrev，而不是别的 =====
-  // page-flip 有三套翻页入口，坑在中间那套：
-  //   turnToNextPage / turnToPrevPage → 内部的 showNext()/showPrev()：瞬跳。
-  //     showNext() 把上界写成了 `currentSpreadIndex < getSpread().length`（该是
-  //     length - 1），在最后一个跨页再往后翻就会先把下标 ++ 到越界值，再读
-  //     `undefined.length` 抛 TypeError，下标卡在非法值上。症状：到末页后第一次
-  //     按「上一页」毫无反应（那一下只是把非法下标拉回合法），要按第二次才退得回去。
-  //     这是库的内部缺陷，别去改 node_modules，绕开它。
-  //   turnToPage → show()：瞬跳，自带边界检查 —— 重建书之后恢复页码用它。
-  //   flipNext / flipPrev → FlipController：**带动画**（就是点击书页走的那条路），
-  //     而且进动画之前先过一遍 checkDirection()：往后翻要求「当前页 < 总页数-1」、
-  //     往回翻要求「当前页 >= 1」，翻不动直接 return —— 那条会越界的路径走不到。
-  // 所以按钮和键盘都用 flipNext/flipPrev：翻页动画本来就是书该有的样子，放大镜里
-  // 点击书页走的是同一条路，三个入口表现完全一致。各自的边界再自己把一道，双保险。
+  // ===== 翻页入口 =====
+  // 点击书页、键盘 ← →、两侧按钮、放大镜里的按钮，全都走这两个函数：
+  // 同一段动画、同一套边界判断（已经在封面就翻不了前一页、在末页翻不了后一页）。
+  // flipRef 是同步的：连点第二下时 state 还没更新，靠它挡住。
   const goPrev = useCallback(() => {
-    const pf = pageFlipRef.current;
-    if (!pf) return;
-    if (pf.getCurrentPageIndex() <= 0) return; // 已经在封面
-    pf.flipPrev();
-  }, []);
+    if (flipRef.current) return;
+    if (currentSpread <= 0) return;
+    const anim: FlipAnim = { dir: 'prev', from: currentSpread, to: currentSpread - 1 };
+    flipRef.current = anim;
+    markFlipping(true);
+    setFlip(anim);
+  }, [currentSpread, markFlipping]);
 
   const goNext = useCallback(() => {
-    const pf = pageFlipRef.current;
-    if (!pf) return;
-    const cur = pf.getCurrentPageIndex();
-    // 封面(0) 后面接着的是第 1 页开头的跨页；其余跨页往后跳两页
-    const next = cur <= 0 ? 1 : cur + 2;
-    if (next >= totalPages) return; // 已经在最后一个跨页
-    pf.flipNext();
-  }, [totalPages]);
+    if (flipRef.current) return;
+    if (currentSpread >= spreads.length - 1) return;
+    const anim: FlipAnim = { dir: 'next', from: currentSpread, to: currentSpread + 1 };
+    flipRef.current = anim;
+    markFlipping(true);
+    setFlip(anim);
+  }, [currentSpread, spreads.length, markFlipping]);
+
+  /** 点书页翻页：左半边往回翻、右半边往后翻（封面态点封面就是往后翻） */
+  const handleBookClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      if (e.clientX - rect.left < rect.width / 2) goPrev();
+      else goNext();
+    },
+    [goPrev, goNext]
+  );
 
   // 放大镜开着时：点在书页以外的地方退出放大。
-  // 不能只靠黑幕自己接点击 —— page-flip 的 .stf__block 比整本书大一圈（所有页面
-  // 都并排摆在里面、靠 transform 挪到眼前），书以外那片空白也归它吃，点黑边根本
-  // 落不到黑幕上。所以按落点判断：点在书页上不动（那是翻页，page-flip 自己在处理），
-  // 点在别处就退。按钮层用 data 标记排除掉。
+  // 书以外的区域不归书管，点黑边就该退出去；书页上的点击是翻页，不在这里处理。
+  // 按钮层用 data 标记排除掉。
   useEffect(() => {
     if (!magnified) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement | null;
-      if (!t || t.closest('[data-magnify-chrome]') || t.closest('.stf__item')) return;
+      if (!t || t.closest('[data-magnify-chrome]')) return;
+      if (containerRef.current?.contains(t)) return; // 点在书上：那是翻页
       setMagnified(false);
     };
     window.addEventListener('pointerdown', onDown, true);
@@ -721,10 +711,12 @@ export default function Viewer() {
   const spreadCount = spreadGroups(pageCount).length;
 
   // ===== 闭合态居中 =====
-  // 闭合态：封面单独在右半（showCover 布局），平移 -W/4 让封面居中
+  // 闭合态：封面单独在右半，平移 -W/4 让封面居中
   // 结尾态（n 为偶数）：背封单独在左半，平移 +W/4 居中
-  const closed = currentPage === 0;
-  const endClosed = totalPages > 1 && currentPage === totalPages - 1 && totalPages % 2 === 0;
+  const closed = currentSpread === 0 && currentSpreadPages.length === 1;
+  const endClosed =
+    currentSpread === spreads.length - 1 && currentSpread > 0 && currentSpreadPages.length === 1;
+  const isOpening = flip !== null;
   const isClosedState = (closed || endClosed) && !isOpening;
 
   // ===== 摊开时那片整体投影 =====
@@ -735,11 +727,47 @@ export default function Viewer() {
   // 所以这里看的是"这趟翻完书还会不会摊着"：closed / endClosed 按已落定的页码算，
   // 翻开的过程中一直是 true（投影自然是灭的）、合上的过程中一直是 false，
   // 就差 flipToClosed —— 这趟的落点是合起态。
+  const flipToClosed = flip !== null && (spreads[flip.to]?.length ?? 0) === 1;
   const showSpreadShadow = !closed && !endClosed && !flipToClosed;
   // 封面在右半页（中心在书盒中心右侧 W/4），要居中需向左移 W/4；结尾背封在左半，向右移 W/4
   const centerOffset = closed ? -bookSize.w / 4 : endClosed ? bookSize.w / 4 : 0;
   const offset = isClosedState ? centerOffset : 0;
   const bookTransform = `translateX(${offset}px) scale(${entered ? 1 : 0.94})`;
+
+  // ===== 书盒里摆哪些页 =====
+  // 静止时就是当前跨页；翻页动画中，底层换成「目标页的一侧 + 当前页的另一侧」：
+  //   往后翻：[当前左页 | 目标右页]，翻动的纸正面是当前右页、背面是目标左页
+  //   往回翻：[目标左页 | 当前右页]，翻动的纸正面是当前左页、背面是目标右页
+  // 封面态（只有右半页）和结尾态（只有左半页）也套这套规则，空的一边留白。
+  let baseLeft: number | undefined;
+  let baseRight: number | undefined;
+  let flipFront: number | undefined;
+  let flipBack: number | undefined;
+  if (!flip) {
+    const pos = spreadPosition(spreads[currentSpread], currentSpread);
+    baseLeft = pos.left;
+    baseRight = pos.right;
+  } else {
+    const fromPos = spreadPosition(spreads[flip.from], flip.from);
+    const toPos = spreadPosition(spreads[flip.to], flip.to);
+    if (flip.dir === 'next') {
+      baseLeft = fromPos.left;
+      baseRight = toPos.right;
+      flipFront = fromPos.right;
+      flipBack = toPos.left;
+    } else {
+      baseLeft = toPos.left;
+      baseRight = fromPos.right;
+      flipFront = fromPos.left;
+      flipBack = toPos.right;
+    }
+  }
+
+  // 桌面投影的范围跟着当前页走
+  const span = useMemo(
+    () => computeSpan(currentPage, totalPages, bookSize.w),
+    [currentPage, totalPages, bookSize.w]
+  );
   const bookTransition =
     'transform 700ms cubic-bezier(0.33, 0, 0.2, 1), opacity 400ms ease, box-shadow 500ms ease';
 
@@ -889,14 +917,30 @@ export default function Viewer() {
           </svg>
         </button>
 
-        {/* 书本：桌面投影 + PageFlip 容器 */}
+        {/* 页面图预热：每页一张常驻的 <img>（不显示），提前加载 + 解码。
+            翻页动画第一帧才不会撞上 800×1135 JPEG 的解码；后台画好的页
+            也靠它先把新图换上去、解码好 */}
+        <div aria-hidden style={{ display: 'none' }}>
+          {pageImages.map((src, i) => (
+            <img
+              key={i}
+              src={src}
+              alt=""
+              ref={(el) => {
+                pageImgRefs.current[i] = el;
+              }}
+            />
+          ))}
+        </div>
+
+        {/* 书本：桌面投影 + 书页 */}
         <div
           className="relative"
           style={{
             width: bookSize.w || 700,
             height: bookSize.h || 500,
-            // 放大镜时把书抬到黑幕（z-30）之上：书是真的变大了，翻页动画、
-            // 点击翻页、边角手势全由 page-flip 原生处理，不能拿别的东西盖住它
+            // 放大镜时把书抬到黑幕（z-30）之上：书是真的变大了，翻页动画和
+            // 点击翻页都还在书自己身上，不能拿别的东西盖住它
             zIndex: magnified ? 40 : undefined,
             // 摊开时的整体书阴影（开会合上的时机见 showSpreadShadow）
             boxShadow: showSpreadShadow
@@ -921,7 +965,7 @@ export default function Viewer() {
           />
           {/* 合起来时只有半页可见（封面在右半、封底在左半）。
               整盒投影会糊到空着的那半页上，所以单独给可见的半页铺一层，
-              垫在 PageFlip 容器下面，只露出封面轮廓之外的部分。
+              垫在书页下面，只露出封面轮廓之外的部分。
               数值照抄首页书架上那本书的 boxShadow。 */}
           <div
             style={{
@@ -943,8 +987,25 @@ export default function Viewer() {
               zIndex: 0,
             }}
           />
-          {/* PageFlip 容器 */}
-          <div ref={containerRef} className="absolute inset-0 z-[1]" />
+          {/* 书页：静态跨页 + 翻页中的那张纸（CSS 3D） */}
+          <div
+            ref={containerRef}
+            data-book
+            className="absolute inset-0 z-[1]"
+            onClick={handleBookClick}
+            style={{ perspective: '2400px' }}
+          >
+            <SpreadLayer left={baseLeft} right={baseRight} images={pageImages} />
+            {flip && (
+              <FlipSheet
+                anim={flip}
+                front={flipFront}
+                back={flipBack}
+                images={pageImages}
+                sheetRef={flipperRef}
+              />
+            )}
+          </div>
           {/* 书脊灰边：书本的厚度感，跟书架上那本一模一样。
               封面态贴在封面左缘、封底态贴在背封右缘，两处都落在书盒中线上。 */}
           <div
@@ -964,7 +1025,7 @@ export default function Viewer() {
               borderRadius: spineRadius,
               opacity: isClosedState ? 1 : 0,
               transition: 'opacity 320ms ease',
-              // 不能挡 PageFlip 的翻页点击
+              // 不能挡书页的翻页点击
               pointerEvents: 'none',
               zIndex: 3,
             }}
@@ -982,21 +1043,21 @@ export default function Viewer() {
       </div>
 
       {/* 放大镜：书本身放大到铺满屏幕（书页尺寸真的变大，见 calcSize），
-          page-flip 按新尺寸重建，所以翻页动画、点击翻页、边角手势全是原生的。
+          翻页动画和点击翻页都跟着放大后的尺寸走。
           这层黑幕垫在书下面（书被抬到 z-40）；"点书页以外退出"由上面那个
-          落点判断的监听负责，黑幕自己接不到点击（page-flip 的 block 比书大一圈） */}
+          落点判断的监听负责，黑幕自己接不到点击 */}
       {magnified && <div className="fixed inset-0 z-30 bg-black/90" />}
 
       {/* 放大镜的按钮层：箭头 / 关闭 / 提示条。整层不吃鼠标（pointer-events-none），
-          只有按钮自己接事件 —— 点在书页上要原样落到 page-flip 手里，才能翻出动画。
+          只有按钮自己接事件 —— 点在书页上要原样落到书自己身上，才能翻出动画。
           挂在最外层（没有 transform / backdrop-filter 的祖先），fixed inset-0 才相对窗口定位 */}
       {magnified && (
         <SpreadZoom
           onPrev={goPrev}
           onNext={goNext}
           // 能不能翻，跟 goPrev / goNext 里的边界判断保持一致
-          canPrev={currentPage > 0}
-          canNext={(currentPage <= 0 ? 1 : currentPage + 2) < totalPages}
+          canPrev={currentSpread > 0}
+          canNext={currentSpread < spreads.length - 1}
           onClose={() => setMagnified(false)}
         />
       )}

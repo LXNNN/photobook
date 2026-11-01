@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 电子相册网站（photo-book）：纯前端照片书编辑器。用户上传照片 → 自动排版（智能生成）或手动排版 → 翻书预览 → 导出 300dpi PDF 交给打印社。数据默认存在浏览器 IndexedDB，不上传服务器；推荐用户启用**文件夹模式**把相册写进电脑文件夹（见下文「文件夹模式」）。
 
-- 技术栈：React 18 + TypeScript（strict）+ Vite 5 + Redux Toolkit + Tailwind CSS + page-flip（翻书动画）+ idb + jspdf + fflate + heic-to
+- 技术栈：React 18 + TypeScript（strict）+ Vite 5 + Redux Toolkit + Tailwind CSS + idb + jspdf + fflate + heic-to（预览页翻页是自己写的 CSS 3D，不用库）
 - 部署：GitHub Pages，地址 `https://LXNNN.github.io/photobook/`
 - 完整需求背景见 `项目设计文档.md` 和 `电子相册网站开发提示词.md`（后者是给 AI 的完整开发提示词，包含全部关键设计规则）
 - 文字的「标题 / 正文」标记、默认字号颜色、封面尾页为什么排除——改字号、加模板、做全局样式弹窗之前，先看 `文字系统说明.md`
@@ -44,7 +44,7 @@ npm run preview   # 预览构建产物
 - 编辑器主画布（`CanvasRenderer`，96dpi 逻辑坐标 + `EDITOR_RENDER_SCALE` 倍位图超采样）
 - 左侧页缩略图（`PageCanvas`，每页一个独立 canvas；先 `ctx.setTransform(scale,...)` 整体缩放，dpi 仍传 96，坐标/字号/折行点与主画布逐字一致。一个 canvas 里 translate 画两页不行——右页逻辑宽会算成负数，背景画不出来）
 - 首页书架封面（48dpi）
-- 预览页整页渲染（150dpi）
+- 预览页整页渲染（按屏幕显示尺寸 × 1.5 超采样 × DPR，封顶 150dpi）
 - PDF 导出（300dpi）
 
 同文件的 `collectAssetIds(pages)` 收集全部图片/贴纸 id——绘制依赖它收得全不全，新增元素类型时两边都要记得。历史上 Viewer 自己抄过一份绘制逻辑，漏了旋转和 cover 裁剪，缩略图/预览全错。
@@ -105,14 +105,17 @@ npm run preview   # 预览构建产物
 - 成对增删/排序只走 `spreadLayout` 的 helper：`addPagePair` / `deletePagePair` / `movePages` 配 `insertAfterSpread` / `appendPairIndex` / `movePairBefore` / `anchorAfterDelete`。成对操作天然保持总页数奇偶；别手算下标，算错就把跨页劈开
 - 左侧缩略图是 `SpreadThumbnail`（1~2 个 `PageCanvas`）。封面/结尾落单页居中显示、没有删除 ×、不可拖拽；右键菜单只显示可插入的那一侧（封面没有「上方」、结尾落单页没有「下方」）
 
-### 预览页（src/pages/Viewer.tsx + page-flip）
+### 预览页（src/pages/Viewer.tsx + 自写 CSS 3D 翻页）
 
-- 先把所有页渲染成 150dpi JPEG blob（`toBlob` + object URL，离开时统一 revoke）；所有图片只解码一次（`decodeAssets`，按 id 并行，解码用的临时 object URL 解完立刻 revoke）——`decodeAssets` 在 `utils/assetStore.ts`，预览页加载、PDF 导出、图片导出三处共用同一份，别在页面里另写
-- PageFlip 在异步链里创建（等图片加载 + 动态 import）。必须：① 用 `cancelled` 标志 + `created` 变量防 StrictMode/依赖变化导致**同一容器上建两套书**（症状：残页、互相盖）；② 传**自己造的 div 壳**给 PageFlip，绝不能传 React 管的节点——`pageFlip.destroy()` 会把它删掉，React 不知道，书就永远消失
-- 翻页一律走 `flipNext/flipPrev`（点击书页、方向键、左右按钮、放大镜都是这一条路，带翻页动画）；**别用 `turnToNextPage/turnToPrevPage`**——它内部 `showNext()` 差一，末页再翻越界抛 TypeError（已修，绕开的）。`turnToPage` 是瞬跳，只用于重建书之后恢复页码
+- **翻页只有一份实现：CSS 3D 整页绕书脊转**（2026-11-01 起替换掉 page-flip，依赖已删除）。`FlipSheet` 是正在翻的那张纸：占书盒的一半、`transformOrigin` 朝书脊（中线），用 Web Animations API `rotateY(0 → ±180deg)`（`FLIP_DURATION` 800ms、ease-in-out），`transform-style: preserve-3d`，正面/背面各一页、`backface-visibility: hidden`。点击书页、键盘 ←→、两侧按钮、放大镜里翻页全部走 `goPrev/goNext`，边界判断和防连点（同步 `flipRef`）都在里面
+- 底层两页的摆法：往后翻 = `[当前左页 | 目标右页]`，翻动纸的正面是当前右页、背面是目标左页；往回翻反过来。**封面/尾页落单也套这套规则**——空着的那半边 `PageFace` 返回 null 露出桌面，别画白底，不然封面翻开时凭空多出半页白纸（踩过）
+- `currentSpread` 是 `spreadGroups` 的下标，不是页码；`currentPage = spreads[currentSpread][0]`。翻页期间 `markFlipping` 让后台绘制和 Worker 派发让路（1200ms 兜底），动画结束 `finishFlip` 才落页
+- 页面图先渲染成 JPEG blob（`toBlob` + object URL，离开时统一 revoke）：按屏幕显示尺寸 × 1.5 超采样 × DPR 渲染、封顶 150dpi；首屏优先（`FIRST_SCREEN_PAGES`），其余后台画好逐页换 `<img>.src`（不重建书）。每页一张常驻 `<img>` 提前 `decode()`，翻页第一帧才不会撞上 JPEG 解码
+- **别把 `loading` 写进「入场过渡」effect 的依赖**：`setLoading(false)` 会触发 effect 重跑，cleanup 把 `setEntered(true)` 的定时器清掉，书永远 opacity 0（踩过）
 - 「📥 导出」下拉在顶栏：PDF + 图片单面 + 图片双面三项。图片两项的开关是 `SHOW_IMAGE_EXPORT_ENTRY`（`utils/exportImages.ts`，同 Editor 的 `SHOW_BODY_STYLE_ENTRY` 套路）——**2026-10-16 起开放**，想再藏只改那一个值，实现别删。图片导出 300dpi + JPEG 0.95（与 PDF 同规格），zip 用 ZipPassThrough 只封装不压缩（同 `backup.ts` 的做法），跨页中间压一条灰书缝（`SPINE_*` 常量）
-- 双面导出的跨页分组（`spreadGroups`）必须与 page-flip `showCover` 的翻开规律一致：`[0]`（封面单独）、`[1,2]`、`[3,4]`…、总页数为偶数时末页单独在左。改开本/页序逻辑时两边一起想
+- 双面导出的跨页分组（`spreadGroups`）必须与预览页的跨页规律一致：`[0]`（封面单独）、`[1,2]`、`[3,4]`…、总页数为偶数时末页单独在左。改开本/页序逻辑时两边一起想
 - 闭合态/摊开态的投影、书脊、居中偏移是精细调过的视觉状态，改动前先读懂 `Viewer.tsx` 里的注释（合起态是镜像不是重合、摊开投影的亮灭时机与书脊相反）
+- 放大镜不再重建书：`magnified` 只改 `bookSize`（铺满窗口）和黑幕层级，翻页动画跟着新尺寸走；点书页外或 ESC 退出（`SpreadZoom` 按钮层用 `data-magnify-chrome` 排除）
 
 ### 图片处理（src/utils/image.ts）
 
