@@ -1,0 +1,3 @@
+# Cloudflare Pages：SPA 回退，刷新 /editor/xxx 这类子路径时交给 index.html
+# GitHub Pages 会忽略这个文件（它用 404.html 做回退）
+/*    /index.html   200
