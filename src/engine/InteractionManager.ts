@@ -4,7 +4,10 @@ import type { BoundaryDistance } from './CanvasRenderer';
 import { EDITOR_RENDER_SCALE } from './CanvasRenderer';
 import { pxToMm } from '@/utils/units';
 
-export type InteractionMode = 'none' | 'drag' | 'resize' | 'rotate' | 'pan';
+export type InteractionMode = 'none' | 'pending-drag' | 'drag' | 'resize' | 'rotate' | 'pan';
+
+/** 鼠标移动超过这个距离（CSS 像素）才算真拖拽，避免双击时手抖把照片挪走 */
+const DRAG_THRESHOLD_PX = 5;
 
 interface HitResult {
   element: Element;
@@ -575,11 +578,12 @@ export class InteractionManager {
         this.dragStartElements = [{ element: { ...hit.element }, pageIndex: hit.pageIndex }];
       }
 
-      this.mode = 'drag';
+      // 先挂起：等鼠标真的移动超过阈值再进入拖拽、再记历史。
+      // 双击打开裁剪时手抖一两个像素，不会被当成拖拽把照片挪走。
+      this.mode = 'pending-drag';
       this.startElement = { ...hit.element };
       this.startPageIndex = hit.pageIndex;
       this.startPageOffset = hit.offsetX;
-      this.onDragStart?.(); // 通知外部记录历史
     } else {
       // 点空白：告诉外部点在哪一页上（用来切换活动页），点桌面则传 null
       this.onClearSelection?.(this.pageIndexAtPoint(pt.x, pt.y));
@@ -603,6 +607,19 @@ export class InteractionManager {
       }
       const hit = this.hitTestAll(pt.x, pt.y);
       this.canvas.style.cursor = hit ? 'move' : 'default';
+      return;
+    }
+
+    if (this.mode === 'pending-drag') {
+      const dx = e.clientX - this.startMouse.x;
+      const dy = e.clientY - this.startMouse.y;
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+
+      // 越过阈值才算真正开始拖拽。从当前位置重新起算，元素不会突然跳一下；
+      // 历史快照也放在这一刻，单纯点击/双击不会污染撤销栈。
+      this.mode = 'drag';
+      this.startMouse = { x: e.clientX, y: e.clientY };
+      this.onDragStart?.();
       return;
     }
 

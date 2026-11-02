@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 电子相册网站（photo-book）：纯前端照片书编辑器。用户上传照片 → 自动排版（智能生成）或手动排版 → 翻书预览 → 导出 300dpi PDF 交给打印社。数据默认存在浏览器 IndexedDB，不上传服务器；推荐用户启用**文件夹模式**把相册写进电脑文件夹（见下文「文件夹模式」）。
 
 - 技术栈：React 18 + TypeScript（strict）+ Vite 5 + Redux Toolkit + Tailwind CSS + idb + jspdf + fflate + heic-to（预览页翻页是自己写的 CSS 3D，不用库）
-- 部署：GitHub Pages，地址 `https://LXNNN.github.io/photobook/`
+- 部署：GitHub Pages，地址 `https://LXNNN.github.io/photobook/`；另有 Cloudflare Pages 根路径部署（`npm run build:cf`），见「部署注意」
 - 完整需求背景见 `项目设计文档.md` 和 `电子相册网站开发提示词.md`（后者是给 AI 的完整开发提示词，包含全部关键设计规则）
 - 文字的「标题 / 正文」标记、默认字号颜色、封面尾页为什么排除——改字号、加模板、做全局样式弹窗之前，先看 `文字系统说明.md`
 - 这些设计文档和 `docs/` **不上传 GitHub**（已写进 .gitignore 且已 `git rm --cached`），只保留在本地
@@ -95,6 +95,7 @@ npm run preview   # 预览构建产物
 
 - `CanvasRenderer` 和 `InteractionManager` 是命令式类，通过 ref 持有，**每个项目只创建一次**（重建会中断拖拽）。交互事件通过回调桥接到 Redux dispatch；回调都带元素所在的 `pageIndex`，直接用它 dispatch，别再拿 `currentPageIndex` 猜（双页下它不是元素所在页）
 - `InteractionManager` 处理：命中检测（含旋转包围盒）、8 个缩放手柄 + 旋转手柄、拖拽 + 对齐辅助线吸附、拖到另一张图片上高亮并换位（`swapImages`）、双击文字 → 覆盖 textarea 编辑、双击图片 → 裁剪弹窗
+- 元素拖拽有 **5px 屏幕像素死区**（`pending-drag` → `drag`）：双击图片开裁剪时手抖一两个像素不会把照片挪走；`onDragStart` 也只在越过阈值时才记历史，单击/双击不会污染撤销栈
 - 屏幕→画布坐标换算用 `getBoundingClientRect()` 比例，已包含外层 CSS transform（zoom/pan），**不要再手动减 pan 除 zoom**
 - 空图片区域（模板里没填照片的 imageId 为空的元素）：加载资源时**必须跳过**，`getImageAsset(undefined)` 会抛 DataError 中断整个循环，排它后面的照片永远画不出来
 - **编辑器主画布是 2× 超采样**（`CanvasRenderer.ts` 的 `EDITOR_RENDER_SCALE = 2`）：坐标/字号/命中判定仍全部按 96dpi 逻辑像素，但位图宽高 ×2，`draw()` 开头 `ctx.setTransform(2,…)` 统一放大，`canvas.style.width/height` 固定为逻辑尺寸——显示大小不变、文字边缘清晰（之前 1:1 位图 + 屏幕缩放导致发虚）。改这里必须同步三处：`InteractionManager.screenToCanvas` 的 `/ renderScale`、`Editor.fitToView` 用 `canvas.style.width` 而不是 `canvas.width` 算 zoom/pan、任何新读 `canvas.width/height` 的地方。**左侧页面缩略图仍是 1×**（她说过先不改）；这和上传压缩是两回事，别混
@@ -146,7 +147,9 @@ npm run preview   # 预览构建产物
 
 ## 部署注意
 
-- `vite.config.ts` 的 `base: '/photobook/'` 和 `main.tsx` 的 `<BrowserRouter basename="/photobook">` 必须一致，改仓库名要两处一起改
+- `vite.config.ts` 的 `base` 默认 `/photobook/`（GitHub Pages）；`npm run build:cf` 用 `vite build --base=/` 构建根路径版本（Cloudflare Pages）。`main.tsx` 的 `<BrowserRouter basename>` 由 `import.meta.env.BASE_URL` 自动推导，不要再手写
+- Cloudflare Pages：构建命令 `npm run build:cf`、输出目录 `dist`；`public/_redirects` 提供 SPA 回退（刷新 `/editor/xxx` 才不会 404），不要删。Windows Git Bash 里别直接用 `VITE_BASE=/`（会被 MSYS 转成 Git 安装路径），用 `build:cf`。详细步骤见 `docs/Cloudflare-Pages部署步骤.md`（仅本地）
+- **换域名 = 换源**：IndexedDB 按源（协议+域名+端口）隔离，用户在旧地址的相册不会出现在新地址；换地址前让用户导出备份 zip、到新地址导入（文件夹模式的数据在磁盘上，重新指认文件夹即可）
 - **`dist/` 里是一个独立的 git 仓库**（`dist/.git`，remote = `github.com/LXNNN/photobook.git`，分支 `gh-pages`）。部署流程：`npm run build` → 进 dist → `git add -A && git commit -m "deploy: …"` → `git push origin gh-pages`。增量提交，**不要 force push**；重新构建不影响 `dist/.git`
 
 ## 数据安全红线

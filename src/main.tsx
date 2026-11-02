@@ -8,6 +8,9 @@ import { initFolderMode } from './utils/folderLibrary';
 import App from './App';
 import './index.css';
 
+// 路由前缀跟着 Vite 的 base 走：GitHub Pages 是 /photobook，Cloudflare Pages 等根部署是 /
+const routerBase = import.meta.env.BASE_URL.replace(/\/$/, '') || '/';
+
 // 启动前先加载模板库：套用用户保存的自定义模板，剔除用户删掉的模板
 (async () => {
   try {
@@ -23,7 +26,7 @@ import './index.css';
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <Provider store={store}>
-        <BrowserRouter basename="/photobook">
+        <BrowserRouter basename={routerBase}>
           <App />
         </BrowserRouter>
       </Provider>
