@@ -1,1 +1,0 @@
-(function(){"use strict";const e=self;e.onmessage=async s=>{const{id:i,blob:a,width:h,height:r}=s.data;try{let t;try{t=await createImageBitmap(a,{resizeWidth:h,resizeHeight:r,resizeQuality:"high"})}catch{t=await createImageBitmap(a)}e.postMessage({id:i,bitmap:t,width:t.width,height:t.height},[t])}catch(t){e.postMessage({id:i,error:String(t)})}}})();
