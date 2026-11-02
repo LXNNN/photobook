@@ -958,7 +958,7 @@ function ImagePropertyPanel({ el, pageIndex, onUpdate, projectId }: ImagePanelPr
                 type="number"
                 min="0"
                 max="10"
-                step="0.5"
+                step="0.25"
                 value={el.borderWidth || 0}
                 onChange={(e) => onUpdate({ borderWidth: parseFloat(e.target.value) || 0 })}
                 className="w-20 text-xs border border-gray-200 rounded px-2 py-1 text-right"

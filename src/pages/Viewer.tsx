@@ -233,10 +233,13 @@ export default function Viewer() {
   const [flip, setFlip] = useState<FlipAnim | null>(null);
   const [entered, setEntered] = useState(false); // 入场动画完成
   const [exportMenuOpen, setExportMenuOpen] = useState(false); // 「📥 导出」的小菜单
+  const [bgIndex, setBgIndex] = useState(0);
+  const BACKDROPS = ['#6c7d9b', '#E8E4DE', '#3a3a3a', '#d4c5b9', '#E9EAEC'];
   const [exporting, setExporting] = useState(false); // 导出中（PDF / 图片都算）
   // 图片导出的进度（PDF 导出没这个，导出中显示"⏳ 导出中 N/M"）
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
   const [magnified, setMagnified] = useState(false); // 放大镜开着
+  const [focusMode, setFocusMode] = useState(false); // 专注模式：隐藏上下栏
 
   // ===== 跨页与页码（全部从 pageImages / currentSpread 推导，不另存一份） =====
   const totalPages = pageImages.length;
@@ -624,15 +627,18 @@ export default function Viewer() {
         e.preventDefault();
         goNext();
       } else if (e.key === 'Escape') {
-        // ESC 逐层退：先关导出菜单、再关放大镜，最后才返回编辑页，别一键把人送走
-        if (exportMenuOpen) setExportMenuOpen(false);
+        // ESC 逐层退：先关专注模式、再关导出菜单、再关放大镜，最后才返回编辑页
+        if (focusMode) setFocusMode(false);
+        else if (exportMenuOpen) setExportMenuOpen(false);
         else if (magnified) setMagnified(false);
         else navigate(`/editor/${projectId}`);
+      } else if (e.key === 'f' || e.key === 'F') {
+        setFocusMode((v) => !v);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [projectId, navigate, goPrev, goNext, magnified, exportMenuOpen]);
+  }, [projectId, navigate, goPrev, goNext, magnified, exportMenuOpen, focusMode]);
 
   // 导出 PDF
   async function handleExportPDF() {
@@ -804,9 +810,9 @@ export default function Viewer() {
   const foreEdge = spineOnLeft ? 1 : -1;
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#6c7d9b] select-none overflow-hidden">
+    <div className="w-full h-full flex flex-col select-none overflow-hidden transition-colors" style={{ background: BACKDROPS[bgIndex] }}>
       {/* 顶部栏 */}
-      <header className="h-14 bg-black/20 backdrop-blur flex items-center justify-between px-6 text-white z-10 flex-shrink-0 border-b border-white/10">
+      <header className={`relative h-14 bg-black/20 backdrop-blur flex items-center justify-between px-6 text-white z-10 flex-shrink-0 border-b border-white/10 transition-transform duration-300 ${focusMode ? '-translate-y-full' : ''}`}>
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/')}
@@ -821,7 +827,7 @@ export default function Viewer() {
             ← 返回编辑
           </button>
         </div>
-        <h1 className="text-sm font-medium text-white">{project?.name}</h1>
+        <h1 className="text-sm font-medium text-white absolute left-1/2 -translate-x-1/2">{project?.name}</h1>
         <div className="flex items-center gap-4">
           <span className="text-xs text-gray-300">
             {currentPage + 1} / {totalPages}
@@ -834,6 +840,24 @@ export default function Viewer() {
           >
             🔍 放大
           </button>
+          <button
+            onClick={() => setFocusMode((v) => !v)}
+            className="flex items-center gap-1.5 text-sm text-white hover:text-gray-200 transition-colors"
+            title="专注模式（F键切换），隐藏上下栏"
+          >
+            {focusMode ? '📺 退出专注' : '⛶ 专注'}
+          </button>
+          {/* 背景色切换 */}
+          <div className="flex items-center gap-1.5" title="切换背景色">
+            {BACKDROPS.map((c, i) => (
+              <button
+                key={c}
+                onClick={() => setBgIndex(i)}
+                className="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110"
+                style={{ backgroundColor: c, borderColor: i === bgIndex ? '#fff' : 'rgba(255,255,255,0.3)' }}
+              />
+            ))}
+          </div>
           {/* 📥 导出：PDF 和图片（单面 / 双面）都收在这个下拉里；
               图片两项的开关在 utils/exportImages.ts（SHOW_IMAGE_EXPORT_ENTRY，现为开放） */}
           <div className="relative">
@@ -964,6 +988,7 @@ export default function Viewer() {
           }}
         >
           {/* 桌面投影 */}
+          {/* 桌面投影（已隐藏） */}
           <div
             style={{
               position: 'absolute', top: 'calc(100% + 2px)', height: 50,
@@ -972,6 +997,7 @@ export default function Viewer() {
                 'radial-gradient(ellipse 50% 55% at 50% 22%, rgba(80,65,40,0.38) 0%, rgba(80,65,40,0.16) 45%, rgba(80,65,40,0) 78%)',
               filter: 'blur(9px)',
               transition: 'left 300ms ease, right 300ms ease',
+              display: 'none',
             }}
           />
           {/* 合起来时只有半页可见（封面在右半、封底在左半）。
@@ -1045,7 +1071,7 @@ export default function Viewer() {
       </div>
 
       {/* 底部提示 */}
-      <div className="h-10 bg-black/20 flex items-center justify-center flex-shrink-0 border-t border-white/10">
+      <div className={`h-10 bg-black/20 flex items-center justify-center flex-shrink-0 border-t border-white/10 transition-transform duration-300 ${focusMode ? 'translate-y-full' : ''}`}>
         <p className="text-xs text-gray-300">
           {isClosedState
             ? '点击封面翻开相册'
