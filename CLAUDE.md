@@ -148,7 +148,7 @@ npm run preview   # 预览构建产物
 ## 部署注意
 
 - `vite.config.ts` 的 `base` 默认 `/photobook/`（GitHub Pages）；`npm run build:cf` 用 `vite build --base=/` 构建根路径版本（Cloudflare Pages）。`main.tsx` 的 `<BrowserRouter basename>` 由 `import.meta.env.BASE_URL` 自动推导，不要再手写
-- Cloudflare Pages：构建命令 `npm run build:cf`、输出目录 `dist`；`public/_redirects` 提供 SPA 回退（刷新 `/editor/xxx` 才不会 404），不要删。Windows Git Bash 里别直接用 `VITE_BASE=/`（会被 MSYS 转成 Git 安装路径），用 `build:cf`。详细步骤见 `docs/Cloudflare-Pages部署步骤.md`（仅本地）
+- Cloudflare Pages：构建命令 `npm run build:cf`、输出目录 `dist`。**Cloudflare 的 SPA 回退靠「产物根目录没有 404.html」**——有 404.html 时 Pages 会把它当自定义 404 返回（状态码 404），深链接就挂了；所以 `build:cf` 故意不生成 404.html，而 GitHub Pages 的 `npm run build` 仍然生成。`public/_redirects` 只是额外保险，别把它当成回退生效的前提。Windows Git Bash 里别直接用 `VITE_BASE=/`（会被 MSYS 转成 Git 安装路径），用 `build:cf`。详细步骤见 `docs/Cloudflare-Pages部署步骤.md`（仅本地）
 - **换域名 = 换源**：IndexedDB 按源（协议+域名+端口）隔离，用户在旧地址的相册不会出现在新地址；换地址前让用户导出备份 zip、到新地址导入（文件夹模式的数据在磁盘上，重新指认文件夹即可）
 - **`dist/` 里是一个独立的 git 仓库**（`dist/.git`，remote = `github.com/LXNNN/photobook.git`，分支 `gh-pages`）。部署流程：`npm run build` → 进 dist → `git add -A && git commit -m "deploy: …"` → `git push origin gh-pages`。增量提交，**不要 force push**；重新构建不影响 `dist/.git`
 

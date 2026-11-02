@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && node -e \"require('fs').copyFileSync('dist/index.html','dist/404.html')\"",
-    "build:cf": "tsc && vite build --base=/ && node -e \"require('fs').copyFileSync('dist/index.html','dist/404.html')\"",
+    "build:cf": "tsc && vite build --base=/",
     "preview": "vite preview"
   },
   "dependencies": {
