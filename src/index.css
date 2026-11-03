@@ -70,3 +70,34 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #aaa;
 }
+
+/* 模态窗入场：背景淡入 + 面板轻微上浮放大。
+   只做入场（关闭时组件直接卸载，不做退场动画）。 */
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.modal-backdrop-in {
+  animation: modal-backdrop-in 160ms ease-out backwards;
+}
+.modal-panel-in {
+  animation: modal-panel-in 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* 系统开了「减少动态效果」就不动 */
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop-in,
+  .modal-panel-in {
+    animation: none;
+  }
+}

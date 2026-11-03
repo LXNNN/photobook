@@ -1,6 +1,7 @@
 import type { Page, Element, BookFormat, ImageElement, TextElement, StickerElement, ShapeElement } from '@/types';
 import { mmToPx } from '@/utils/units';
 import { computeCoverCrop } from '@/utils/image';
+import { isStaticBackgroundValue, resolveStaticBackground } from '@/utils/staticBackgrounds';
 
 /** 静态资源图片缓存（模块级，避免重复加载） */
 const staticImageCache = new Map<string, HTMLImageElement>();
@@ -20,11 +21,6 @@ function getOrLoadStaticImage(url: string): HTMLImageElement {
   return img;
 }
 
-/** 背景值是不是打包后的静态资源 URL（和 collectAssetIds 的判断口径一致） */
-function isStaticBackgroundValue(value: string): boolean {
-  return value.startsWith('data:') || value.startsWith('/');
-}
-
 /**
  * 静态背景图是否已经加载完成。
  * 编辑器缩略图靠它判断「同一份 page 要不要再补画一次」——图片刚加载完时
@@ -35,7 +31,8 @@ export function isStaticBackgroundReady(page: Page): boolean {
   const value = page.background.value;
   // imageId 背景由 assets 提供，加载状态不归这里管
   if (!isStaticBackgroundValue(value)) return true;
-  const img = staticImageCache.get(value);
+  // 缓存键是当前构建真正请求的 URL；页面里存的可能是 static-bg: 稳定键或旧 URL
+  const img = staticImageCache.get(resolveStaticBackground(value));
   return !!img && img.complete && img.naturalWidth > 0;
 }
 
@@ -50,7 +47,7 @@ export async function ensureStaticBackgroundsLoaded(pages: Page[]): Promise<void
   const urls = new Set<string>();
   for (const page of pages) {
     if (page.background.type === 'image' && isStaticBackgroundValue(page.background.value)) {
-      urls.add(page.background.value);
+      urls.add(resolveStaticBackground(page.background.value));
     }
   }
   await Promise.all(
@@ -115,8 +112,8 @@ export function drawPageContent(
   } else if (page.background.type === 'image') {
     let bgImg = assets.get(page.background.value);
     if (!bgImg) {
-      // 静态资源URL：直接加载并缓存到模块级Map
-      bgImg = getOrLoadStaticImage(page.background.value);
+      // 静态资源：稳定键 / 历史 URL 都换成当前构建真正可加载的 URL，再加载并缓存
+      bgImg = getOrLoadStaticImage(resolveStaticBackground(page.background.value));
     }
     if (bgImg && imageReady(bgImg)) {
       const size = imageSize(bgImg);
@@ -155,8 +152,8 @@ export function drawPageContent(
 export function collectAssetIds(pages: Page[]): Set<string> {
   const ids = new Set<string>();
   for (const page of pages) {
-    // 图片背景：静态资源URL（以/开头）不加入assets，直接绘制时加载；dataURL也不当id查
-    if (page.background.type === 'image' && !page.background.value.startsWith('data:') && !page.background.value.startsWith('/')) {
+    // 图片背景：静态资源（稳定键 / dataURL / 以/开头的 URL）不加入 assets，直接绘制时加载
+    if (page.background.type === 'image' && !isStaticBackgroundValue(page.background.value)) {
       ids.add(page.background.value);
     }
     for (const el of page.elements) {

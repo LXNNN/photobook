@@ -2,6 +2,7 @@ import { openDB, IDBPDatabase } from 'idb';
 import type { Project, ImageAsset, StoredImageRecord } from '@/types';
 import type { TemplateDefinition } from '@/templates';
 import { collectAssetIds } from '@/engine/drawPageContent';
+import { normalizeProjectBackgrounds } from './staticBackgrounds';
 
 const DB_NAME = 'photo-book-db';
 /**
@@ -41,17 +42,19 @@ function getDB(): Promise<IDBPDatabase> {
 
 export async function saveProject(project: Project): Promise<void> {
   const db = await getDB();
-  await db.put('projects', project);
+  // 内置模板背景统一存稳定键，别让打包 URL（部署路径/hash 会变）进 IndexedDB
+  await db.put('projects', normalizeProjectBackgrounds(project));
 }
 
 export async function getProject(id: string): Promise<Project | undefined> {
   const db = await getDB();
-  return db.get('projects', id);
+  const project = (await db.get('projects', id)) as Project | undefined;
+  return project ? normalizeProjectBackgrounds(project) : undefined;
 }
 
 export async function getAllProjects(): Promise<Project[]> {
   const db = await getDB();
-  const projects = await db.getAll('projects');
+  const projects = ((await db.getAll('projects')) as Project[]).map(normalizeProjectBackgrounds);
   return projects.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 

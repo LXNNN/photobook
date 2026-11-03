@@ -26,6 +26,7 @@ import { mmToPx } from './units';
 import { elementPhotoArea } from '@/engine/drawPageContent';
 import { decodeAssets, getImageAsset, getImageMeta } from './assetStore';
 import { getImageURL, loadImage } from './image';
+import { isStaticBackgroundValue } from './staticBackgrounds';
 import type { ShrinkRequest, ShrinkResponse } from './previewShrinkWorker';
 
 /** 上传时缩略图的长边（image.ts 的 createThumbnail(img, 200)） */
@@ -73,7 +74,7 @@ function collectBackgroundIds(pages: Page[]): Set<string> {
   for (const page of pages) {
     if (page.background.type !== 'image') continue;
     const value = page.background.value;
-    if (value.startsWith('data:') || value.startsWith('/')) continue;
+    if (isStaticBackgroundValue(value)) continue;
     ids.add(value);
   }
   return ids;
@@ -222,7 +223,7 @@ export function collectImageIdsForPages(pages: Page[], pageCount: number): Set<s
     const page = pages[i];
     if (page.background.type === 'image') {
       const value = page.background.value;
-      if (!value.startsWith('data:') && !value.startsWith('/')) ids.add(value);
+      if (!isStaticBackgroundValue(value)) ids.add(value);
     }
     for (const el of page.elements) {
       if (el.type === 'image' && el.imageId) ids.add(el.imageId);

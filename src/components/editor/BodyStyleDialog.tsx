@@ -32,9 +32,9 @@ export default function BodyStyleDialog({ project, onApply, onClose }: Props) {
   const affected = countBodyText(project);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+    <div className="modal-backdrop-in fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-xl p-6 w-[400px] max-h-[80vh] overflow-auto"
+        className="modal-panel-in bg-white rounded-xl shadow-xl p-6 w-[400px] max-h-[80vh] overflow-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">

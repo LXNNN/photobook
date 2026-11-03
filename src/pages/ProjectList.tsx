@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, store } from '@/store';
 import { setCurrentProject, setProjectList, createProject } from '@/store/projectSlice';
-import { getAllProjects, deleteProject } from '@/utils/storage';
+import { deleteProject } from '@/utils/storage';
 import { getImageAsset, getImageMeta } from '@/utils/assetStore';
 import { getImageURL } from '@/utils/image';
 import { formatDate } from '@/utils/units';
@@ -25,7 +25,9 @@ import {
   runSync,
   reconnectFolder,
   deleteAlbum,
+  ensureAlbumFolder,
   getAlbumFolderName,
+  getShelfProjects,
   takeFolderNotices,
   persistProject,
 } from '@/utils/folderLibrary';
@@ -54,7 +56,8 @@ interface ConflictState {
 interface ConnectDialogState {
   handle: FileSystemDirectoryHandle;
   preview: ConnectPreview;
-  mode: 'fresh' | 'migrate' | 'load';
+  /** switch：已连接着一个文件夹，这次选了另一个（整套书架切换，不合并） */
+  mode: 'fresh' | 'migrate' | 'load' | 'switch';
 }
 
 /** 删除相册确认（已连接文件夹时：磁盘上的文件夹也会一起删，§6.10） */
@@ -99,7 +102,9 @@ export default function ProjectList() {
   }, [folderStatus.dataVersion]);
 
   async function loadProjects() {
-    const list = await getAllProjects();
+    // 书架只显示「当前文件夹」里的相册；换过文件夹后旧相册还留在浏览器里，
+    // 但不上书架（切回原来的文件夹就能再看到）
+    const list = await getShelfProjects();
     setProjects(list);
     dispatch(setProjectList(list));
 
@@ -219,7 +224,9 @@ export default function ProjectList() {
     setTimeout(async () => {
       const state = store.getState();
       if (state.project.current) {
-        // 已连接文件夹时，persistProject 顺手把新相册的文件夹建好（§6.1）
+        // 已连接文件夹时先建好新相册的文件夹并登记进当前书架名单，
+        // 再持久化（否则 saveProjectToFolder 会因为「名单里没有」而跳过）
+        await ensureAlbumFolder(state.project.current);
         await persistProject(state.project.current);
         navigate(`/editor/${state.project.current.id}`);
       }
@@ -292,9 +299,14 @@ export default function ProjectList() {
     }
     if (!handle) return; // 用户取消了选择
 
-    setBusy({ title: '正在看看文件夹里有什么…', done: 0, total: 0 });
+    // 看一眼文件夹通常只要几十毫秒。立刻弹进度框的话，它会在确认框前面
+    // 闪一下（还没看清就没了）；超过 400ms 才说明确实慢，这时再给反馈
+    const slowTimer = window.setTimeout(() => {
+      setBusy({ title: '正在看看文件夹里有什么…', done: 0, total: 0 });
+    }, 400);
     try {
       const prep = await prepareConnect(handle);
+      window.clearTimeout(slowTimer);
       setBusy(null);
       if (!prep.ok) {
         setToast(
@@ -305,8 +317,11 @@ export default function ProjectList() {
         return;
       }
       const p = prep.preview;
-      const mode: ConnectDialogState['mode'] =
-        p.hasPhotoBook && p.folderAlbumCount > 0
+      // 已经连着一个文件夹、这次又选了另一个：整套切换，不把当前书架搬过去
+      const switching = getFolderStatus().state === 'connected' && !p.sameFolder;
+      const mode: ConnectDialogState['mode'] = switching
+        ? 'switch'
+        : p.hasPhotoBook && p.folderAlbumCount > 0
           ? 'load' // 文件夹里已经有相册（换电脑/换浏览器场景）
           : p.localAlbumCount > 0
             ? 'migrate' // 本机有相册要搬进去
@@ -317,6 +332,7 @@ export default function ProjectList() {
         setConnectDialog({ handle, preview: p, mode });
       }
     } catch (err) {
+      window.clearTimeout(slowTimer);
       setBusy(null);
       console.error('检查文件夹失败', err);
       setToast('连接文件夹时出了点问题，可以再试一次');
@@ -331,17 +347,33 @@ export default function ProjectList() {
   ) {
     setConnectDialog(null);
     const migrating = mode === 'migrate';
-    setBusy({ title: migrating ? '正在把照片写进文件夹…' : '正在连接文件夹…', done: 0, total: 0 });
+    const switching = mode === 'switch';
+    setBusy({
+      title: migrating
+        ? '正在把照片写进文件夹…'
+        : switching
+          ? '正在切换到另一个文件夹…'
+          : '正在连接文件夹…',
+      done: 0,
+      total: 0,
+    });
     try {
       const result = await runSync(handle, {
-        // load 时文件夹里已有结构；fresh / migrate 都要先建好
+        // load 时文件夹里已有结构；fresh / migrate / switch 都先建好（已有就复用）
         createRoot: mode !== 'load',
+        switchFolder: switching,
         onProgress: (p) =>
           setBusy((prev) => (prev ? { ...prev, done: p.done, total: p.total } : prev)),
       });
       setBusy(null);
       const parts: string[] = [];
-      if (migrating) {
+      if (switching) {
+        parts.push(
+          result.loaded > 0
+            ? `已切换到「${preview.folderName}」，载入 ${result.loaded} 本相册`
+            : `已切换到「${preview.folderName}」。这个文件夹里还没有相册，书架暂时是空的`
+        );
+      } else if (migrating) {
         parts.push(
           `搬家完成！照片已经在「${preview.folderName}」\\photo-book\\ 里（每本相册一个文件夹），现在清浏览器数据也不怕了`
         );
@@ -438,8 +470,9 @@ export default function ProjectList() {
     setBusy({ title: '正在读取备份包…', done: 0, total: 0 });
     try {
       const parsed = await parseBackup(file);
-      // 用库里最新的数据判断重名，不用页面上的 state——那可能已经过时了
-      const local = await getAllProjects();
+      // 用当前书架最新的数据判断重名，不用页面上的 state——那可能已经过时了。
+      // 旧文件夹留下的相册不算，导入时不会莫名其妙撞上它们的名字
+      const local = await getShelfProjects();
       const byName = new Map(local.map((p) => [p.name, p.id]));
       const collisions = parsed.bundles.filter((b) => byName.has(b.project.name));
       setBusy(null);
@@ -698,11 +731,15 @@ export default function ProjectList() {
         </div>
       </div>
 
-      {/* 连接文件夹前的确认：迁移（本机 → 文件夹）或载入（文件夹 → 本机），文案 §9.2 */}
+      {/* 连接文件夹前的确认：迁移（本机 → 文件夹）、导入（文件夹 → 本机）或切换文件夹 */}
       {connectDialog && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setConnectDialog(null)}>
-          <div className="bg-white rounded-xl p-6 w-[30rem] shadow-xl" onClick={(e) => e.stopPropagation()}>
-            {connectDialog.mode === 'migrate' ? (
+        <div className="modal-backdrop-in fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setConnectDialog(null)}>
+          <div className="modal-panel-in bg-white rounded-xl p-6 w-[30rem] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            {connectDialog.mode === 'switch' ? (
+              <h2 className="text-lg font-semibold mb-5">
+                确定切换到文件夹「{connectDialog.preview.folderName}」吗？
+              </h2>
+            ) : connectDialog.mode === 'migrate' ? (
               <>
                 <h2 className="text-lg font-semibold mb-3">把书架上的相册搬进文件夹？</h2>
                 <p className="text-sm text-gray-600 leading-relaxed mb-4">
@@ -712,14 +749,9 @@ export default function ProjectList() {
                 </p>
               </>
             ) : (
-              <>
-                <h2 className="text-lg font-semibold mb-3">
-                  这个文件夹里已经有相册（{connectDialog.preview.folderAlbumCount} 本）
-                </h2>
-                <p className="text-sm text-gray-600 leading-relaxed mb-4">
-                  要载入到这台电脑吗？两边都有的相册会保留更新的那本；这台电脑书架上有、文件夹里没有的，会一并写进文件夹。其余的原样都在。
-                </p>
-              </>
+              <h2 className="text-lg font-semibold mb-5">
+                确定将文件夹「{connectDialog.preview.folderName}」导入吗？
+              </h2>
             )}
             <div className="flex justify-end gap-3">
               <button
@@ -732,7 +764,11 @@ export default function ProjectList() {
                 onClick={() => runConnect(connectDialog.handle, connectDialog.preview, connectDialog.mode)}
                 className="px-4 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800"
               >
-                {connectDialog.mode === 'migrate' ? '开始搬家' : '载入'}
+                {connectDialog.mode === 'migrate'
+                  ? '开始搬家'
+                  : connectDialog.mode === 'switch'
+                    ? '切换'
+                    : '导入'}
               </button>
             </div>
           </div>
@@ -741,8 +777,8 @@ export default function ProjectList() {
 
       {/* 删除相册确认（已连接文件夹：磁盘上的文件夹会一起删，§6.10 / 文案 §9.2） */}
       {deleteDialog && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setDeleteDialog(null)}>
-          <div className="bg-white rounded-xl p-6 w-[30rem] shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop-in fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setDeleteDialog(null)}>
+          <div className="modal-panel-in bg-white rounded-xl p-6 w-[30rem] shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold mb-3">删除《{deleteDialog.project.name}》？</h2>
             <p className="text-sm text-gray-700 leading-relaxed mb-3">
               这本相册会从书架里删掉，{deleteDialog.photoCount} 张照片和它的排版数据也会从电脑文件夹（photo-book\
@@ -772,8 +808,8 @@ export default function ProjectList() {
 
       {/* 新建弹窗 */}
       {showCreate && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowCreate(false)}>
-          <div className="bg-white rounded-xl p-6 w-[30rem] max-w-[calc(100vw-2rem)] shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop-in fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowCreate(false)}>
+          <div className="modal-panel-in bg-white rounded-xl p-6 w-[30rem] max-w-[calc(100vw-2rem)] shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold mb-4">新建相册</h2>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">相册名称</label>
             <input
@@ -836,8 +872,8 @@ export default function ProjectList() {
 
       {/* 重名询问。整个导入过程只在这里停一次，之后一口气做完 */}
       {conflict && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-[28rem] shadow-xl">
+        <div className="modal-backdrop-in fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="modal-panel-in bg-white rounded-xl p-6 w-[28rem] shadow-xl">
             <h2 className="text-lg font-semibold mb-3">
               有 {conflict.collisions.length} 本相册重名了
             </h2>
@@ -883,8 +919,8 @@ export default function ProjectList() {
 
       {/* 进度。几百 MB 的活儿要跑一阵，得让用户知道在动、以及别关页面 */}
       {busy && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-          <div className="bg-white rounded-xl p-8 w-96 shadow-xl text-center">
+        <div className="modal-backdrop-in fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+          <div className="modal-panel-in bg-white rounded-xl p-8 w-96 shadow-xl text-center">
             <div className="text-base font-medium text-gray-800 mb-4">{busy.title}</div>
             {busy.total > 0 ? (
               <>

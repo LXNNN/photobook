@@ -4,7 +4,7 @@ import { getRandomText, randomPick } from './copywriting';
 import { getTemplateCopyList } from './templateCopy';
 import { getThemeById } from './themes';
 import { DEFAULT_BODY_COLOR, DEFAULT_BODY_FONT_SIZE } from '@/utils/bodyText';
-import moban1Bg from '@/assets/moban1.png';
+import { staticBackgroundKey } from '@/utils/staticBackgrounds';
 
 /**
  * 模板定义
@@ -27,7 +27,11 @@ export interface TemplateDefinition {
   doodle?: PageDoodle;
   /** 模板背景色（应用模板时设置页面背景） */
   background?: string;
-  /** 模板背景图（应用模板时设置页面背景图，不可移动缩放），优先级高于background */
+  /**
+   * 模板背景图（应用模板时设置页面背景图，不可移动缩放），优先级高于 background。
+   * 内置背景存稳定键（如 `static-bg:moban1`），不要存打包后的 URL——
+   * 渲染时会由 utils/staticBackgrounds 换成当前构建的路径。
+   */
   backgroundImage?: string;
 }
 
@@ -1462,7 +1466,7 @@ export const TEMPLATES: TemplateDefinition[] = [
     styleId: 'atmosphere',
     description: '蓝天白云晾衣架背景图，四张拍立得照片悬挂，文艺清新',
     thumbnail: '',
-    backgroundImage: moban1Bg,
+    backgroundImage: staticBackgroundKey('moban1'),
     elements: [
       // 第1张照片（左上拍立得）
       { type: 'image', x: 0.1453, y: 0.3352, width: 0.1817, height: 0.1409, cropHint: 'cover', rotation: 9 },

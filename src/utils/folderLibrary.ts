@@ -47,6 +47,7 @@ import { extFor, safeFolderName } from './fileNames';
 import { importTemplates, isUsableTemplate } from './templateImport';
 import { createThumbnail, loadImage } from './image';
 import { setTemplateChangeHook } from './templateLibrary';
+import { normalizeProjectBackgrounds } from './staticBackgrounds';
 
 /**
  * 文件夹模式 · 书架层
@@ -64,6 +65,8 @@ import { setTemplateChangeHook } from './templateLibrary';
  */
 
 const ALBUM_FORMAT = 1;
+/** 当前文件夹里有哪些相册（书架只显示这些；换文件夹时整体替换） */
+const FOLDER_PROJECT_IDS_KEY = 'folderProjectIds';
 
 // ==================== 书架提示（轻提示队列） ====================
 // 合并/迁移过程中发现的被动变化（相册被移除、数据读失败……），
@@ -102,6 +105,55 @@ function isConnected(): boolean {
 
 export function isFolderConnected(): boolean {
   return isConnected();
+}
+
+/**
+ * 当前连接的文件夹里有哪些相册。
+ *
+ * IndexedDB 是全局的：换文件夹后，旧文件夹的相册记录会继续留在浏览器里
+ * （不删——那是数据安全红线）。书架靠这份名单把它们挡住，只显示当前文件夹的。
+ * null = 还没连接过 / 没有记录，书架显示全部（老行为）。
+ */
+let currentFolderProjectIds: Set<string> | null = null;
+
+async function readStoredFolderProjectIds(): Promise<Set<string> | null> {
+  try {
+    const ids = await getSetting<string[]>(FOLDER_PROJECT_IDS_KEY);
+    return Array.isArray(ids) ? new Set(ids) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStoredFolderProjectIds(ids: Set<string>): Promise<void> {
+  try {
+    await setSetting(FOLDER_PROJECT_IDS_KEY, [...ids]);
+  } catch {
+    // 这份名单只是书架过滤缓存；写失败不影响相册和照片本身
+  }
+}
+
+async function registerCurrentFolderProject(id: string): Promise<void> {
+  if (!currentFolderProjectIds) currentFolderProjectIds = new Set();
+  if (currentFolderProjectIds.has(id)) return;
+  currentFolderProjectIds.add(id);
+  await writeStoredFolderProjectIds(currentFolderProjectIds);
+}
+
+async function unregisterCurrentFolderProject(id: string): Promise<void> {
+  if (!currentFolderProjectIds?.delete(id)) return;
+  await writeStoredFolderProjectIds(currentFolderProjectIds);
+}
+
+/**
+ * 书架要显示的相册。
+ * 文件夹模式有「当前文件夹名单」时只显示名单里的；旧文件夹的相册留在原处，
+ * 切回去（重新选择那个文件夹）就会再出现。
+ */
+export async function getShelfProjects(): Promise<Project[]> {
+  const projects = await getAllProjects();
+  if (!currentFolderProjectIds) return projects;
+  return projects.filter((p) => currentFolderProjectIds!.has(p.id));
 }
 
 /**
@@ -278,13 +330,16 @@ async function buildEntry(folder: string, images: AlbumImageRecord[]): Promise<A
 // ==================== 清单读写 ====================
 
 async function writeAlbumFile(project: Project, entry: AlbumEntry): Promise<void> {
-  entry.project = project;
+  // 内置模板背景图落盘前统一成稳定键（static-bg:...），
+  // 不把当前部署的 URL / 开发服务器地址写进相册数据.json
+  const normalized = normalizeProjectBackgrounds(project);
+  entry.project = normalized;
   const dir = await albumDir(entry);
   const payload: AlbumFile = {
     app: 'photo-book',
     formatVersion: ALBUM_FORMAT,
     updatedAt: Date.now(),
-    project,
+    project: normalized,
     images: [...entry.images.values()],
   };
   await writeJsonFile(dir, ALBUM_DATA_FILE, payload);
@@ -314,6 +369,7 @@ async function createAlbumEntry(project: Project, usedNames?: Set<string>): Prom
 export async function ensureAlbumFolder(project: Project): Promise<string | undefined> {
   if (!isConnected()) return undefined;
   const entry = albumEntries.get(project.id) ?? (await createAlbumEntry(project));
+  await registerCurrentFolderProject(project.id);
   return entry.folder;
 }
 
@@ -468,7 +524,14 @@ export async function saveProjectToFolder(project: Project): Promise<boolean> {
     return false;
   }
   try {
-    const entry = albumEntries.get(project.id) ?? (await createAlbumEntry(project));
+    let entry = albumEntries.get(project.id);
+    if (!entry) {
+      // 当前文件夹有名单、且名单里没有这本：它属于之前连接过的另一个文件夹。
+      // 不要因为打开/保存了它，就在新文件夹里凭空建一个同名目录。
+      if (currentFolderProjectIds && !currentFolderProjectIds.has(project.id)) return false;
+      entry = await createAlbumEntry(project);
+    }
+    await registerCurrentFolderProject(project.id);
     entry.project = project;
     // 兜底自愈：万一有带大图的新照片没在保存时登记过（比如断连时上传后重连补写），
     // 这里只处理"没登记过的"，已登记的不做核对，保持保存动作轻快
@@ -542,6 +605,8 @@ export async function saveImageToAlbum(projectId: string, asset: ImageAsset): Pr
 interface FolderAlbum {
   folder: string;
   data: AlbumFile;
+  /** 旧数据里的内置背景 URL 被归一成了稳定键，载入时顺手写回 JSON */
+  normalized?: boolean;
 }
 
 async function scanFolderAlbums(
@@ -565,7 +630,11 @@ async function scanFolderAlbums(
     }
     const data = read.value;
     if (data?.app !== 'photo-book' || !data.project?.id || !Array.isArray(data.project.pages)) continue;
-    albums.push({ folder: entry.name, data });
+    // 读出来的旧相册可能把内置背景存成了打包 URL / 开发服务器 URL，先归一成稳定键
+    const normalized = normalizeProjectBackgrounds(data.project);
+    const changed = normalized !== data.project;
+    data.project = normalized;
+    albums.push({ folder: entry.name, data, normalized: changed });
   }
   return { albums, usedNames };
 }
@@ -606,7 +675,9 @@ export async function prepareConnect(handle: FileSystemDirectoryHandle): Promise
       hasPhotoBook = false; // 还没有 photo-book，视为全新
     }
 
-    const localProjects = await getAllProjects();
+    // 只数「当前书架」上的相册：换过文件夹后，旧文件夹的相册还在 IndexedDB 里，
+    // 但不应该算进这次连接/迁移的数量里
+    const localProjects = await getShelfProjects();
     let localPhotoCount = 0;
     for (const p of localProjects) localPhotoCount += collectAssetIds(p.pages).size;
 
@@ -645,11 +716,16 @@ export interface SyncResult {
  * 连接第二步：正式合并（§6.5）。
  * 首次启用、迁移、换电脑、重新指认 —— 全都走这一条路，
  * 规则统一为"逐本比对、缺什么补什么"，可中断可重跑。
+ *
+ * `switchFolder`：用户主动从当前文件夹换到另一个文件夹。
+ * 这时新文件夹是「另一套书架」——只载入它自己的相册，绝不把当前书架上
+ * 旧文件夹的相册补写进去；旧相册仍留在原文件夹和浏览器里，切回去还能看到。
  */
 export async function runSync(
   handle: FileSystemDirectoryHandle,
-  options?: { createRoot?: boolean; onProgress?: (p: SyncProgress) => void }
+  options?: { createRoot?: boolean; switchFolder?: boolean; onProgress?: (p: SyncProgress) => void }
 ): Promise<SyncResult> {
+  const switching = options?.switchFolder === true;
   const root = await getRootDirFrom(handle, { create: options?.createRoot !== false });
   setRootDirCache(root);
   albumEntries.clear();
@@ -662,6 +738,15 @@ export async function runSync(
   // 「搬过家」且结构完整，才允许把文件夹里没有的相册判成"被手动删掉"；
   // 否则一律走安全方向：补写进文件夹（宁可多写，不丢）
   const canRemoveMissing = migrated && hasReadme;
+  // 当前文件夹的相册名单（上次连接时落盘的）。名单之外的本地相册属于
+  // 「之前连接过的另一个文件夹」：不补写、也不当成被手动删除。
+  // 重新指认/重新插上移动硬盘时 sameFolder 可能是 false，这时用内存里的名单兜底，
+  // 免得把别的文件夹留下的相册补写进来。
+  const knownLocalIds = sameFolder
+    ? ((await readStoredFolderProjectIds()) ?? currentFolderProjectIds)
+    : currentFolderProjectIds;
+  const isFromOtherFolder = (id: string) =>
+    !switching && knownLocalIds !== null && !knownLocalIds.has(id);
 
   const { albums: folderAlbums, usedNames } = await scanFolderAlbums(root);
   const localProjects = await getAllProjects();
@@ -675,6 +760,11 @@ export async function runSync(
 
   const jobs: Job[] = [];
   for (const album of folderAlbums) {
+    if (switching) {
+      // 换文件夹：新文件夹里的版本说了算，不拿旧书架上的版本往回写
+      jobs.push({ kind: 'load', album });
+      continue;
+    }
     const local = localProjects.find((p) => p.id === album.data.project.id);
     if (!local || album.data.project.updatedAt > local.updatedAt) jobs.push({ kind: 'load', album });
     else if (local.updatedAt > album.data.project.updatedAt)
@@ -683,6 +773,8 @@ export async function runSync(
   }
   for (const project of localProjects) {
     if (folderById.has(project.id)) continue;
+    // 换文件夹：旧书架上的相册一个都不往新文件夹搬
+    if (switching || isFromOtherFolder(project.id)) continue;
     jobs.push(canRemoveMissing ? { kind: 'remove', project } : { kind: 'push', project });
   }
 
@@ -722,6 +814,15 @@ export async function runSync(
         albumEntries.set(data.project.id, entry);
         registerLocations(entry);
         await ensureImageRecords(entry, data.images ?? [], backfillQueue, verifiedIds);
+        if (job.album.normalized) {
+          // 旧的背景 URL 已经换成稳定键，顺手把 JSON 也修好；
+          // 写失败不影响载入，下次保存时还会再写
+          try {
+            await writeAlbumFile(data.project, entry);
+          } catch {
+            // 忽略：内存里已经是稳定键，渲染不受影响
+          }
+        }
         result.loaded += job.kind === 'load' ? 1 : 0;
         tick(1 + collectAssetIds(data.project.pages).size);
         report();
@@ -765,6 +866,10 @@ export async function runSync(
     void backfillThumbnails(backfillQueue);
 
     await storeFolderHandle(handle);
+    // 书架名单 = 这个文件夹里的相册。名单之外的本地相册属于别的文件夹，
+    // 留在浏览器里不删，但不上书架、也不参与之后的比对。
+    currentFolderProjectIds = new Set(albumEntries.keys());
+    await writeStoredFolderProjectIds(currentFolderProjectIds);
     await setMigratedFlag(true);
     albumWritePending = false;
     templateWritePending = await getTemplatesDirty();
@@ -987,6 +1092,8 @@ export async function initFolderMode(): Promise<void> {
       setFolderState('off');
       return;
     }
+    // 没连上也要先知道「当前文件夹是哪几本」，书架只显示这些
+    currentFolderProjectIds = await readStoredFolderProjectIds();
     const perm = await queryFolderPermission(handle);
     if (perm !== 'granted') {
       setFolderState('needs-reconnect', handle.name);
@@ -1073,6 +1180,7 @@ export async function deleteAlbum(projectId: string): Promise<DeleteAlbumResult>
       const report = await deleteAlbumFolder(folderName);
       await deleteProject(projectId);
       albumEntries.delete(projectId);
+      await unregisterCurrentFolderProject(projectId);
       dropLocations(folderName);
       bumpDataVersion();
       return { folderName, failed: report.failed };
@@ -1082,6 +1190,7 @@ export async function deleteAlbum(projectId: string): Promise<DeleteAlbumResult>
   // 磁盘上已经没有这本的文件夹（自己被手删过）：只删书架记录
   await deleteProject(projectId);
   albumEntries.delete(projectId);
+  await unregisterCurrentFolderProject(projectId);
   bumpDataVersion();
   return { folderName: folderName ?? '', failed: [] };
 }

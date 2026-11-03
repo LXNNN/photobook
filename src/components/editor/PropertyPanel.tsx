@@ -105,8 +105,8 @@ export default function PropertyPanel({ pages, activePageIndex, selectedIds, pro
 
       {/* 模板操作弹窗 */}
       {templateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setTemplateModalOpen(false)}>
-          <div className="bg-white rounded-xl shadow-xl p-6 w-96 max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop-in fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setTemplateModalOpen(false)}>
+          <div className="modal-panel-in bg-white rounded-xl shadow-xl p-6 w-96 max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-800">模板操作</h3>
               <button

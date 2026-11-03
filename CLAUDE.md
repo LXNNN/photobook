@@ -76,6 +76,7 @@ npm run preview   # 预览构建产物
 - 文案填充规则：`fixed: true` 的文字（装饰性小字，如 TIME 竖排字母、"旅行碎片"）保持 placeholder 不动；`shortBody: true` 的小文字框取主题 `shortParagraphs` 里的一行短句；标题/正文优先看显式的 `title` / `body` 标记，没标记时按 `fontSizeRatio ≥ 0.04` 区分；正文字号用 `project.bodyFontSize`（默认 13）；旅行/日常主题用模板专属文案库，其他主题用主题文案库
 - `pageElementsToTemplateElements` 写回模板时**必须带上 fixed / body / shortBody 标记**，否则存出来的模板下次应用时装饰文字会被随机文案顶掉、小框短句会被长正文撑出去
 - 隐藏模板：`HIDDEN_TEMPLATE_IDS = ['full-image']`
+- **内置模板的静态背景图存稳定键，不存打包 URL**：4.2 的 `moban1.png` 在模板里写 `staticBackgroundKey('moban1')`（`static-bg:moban1`），渲染/导出时由 `utils/staticBackgrounds.ts` 换成当前构建的 URL。相册数据.json / IndexedDB 里绝不能落 `/photobook/assets/moban1-<hash>.png` 或 `/photobook/src/assets/...` 这类地址——换部署路径/hash 后必 404（旧数据读取时会自动归一）。新增内置背景：图放 `src/assets/` → 在 `STATIC_BACKGROUNDS` 登记 → 模板里用稳定键
 
 ### 智能排版（src/utils/autoLayout.ts + utils/photoAnalysis.ts）
 
@@ -138,6 +139,7 @@ npm run preview   # 预览构建产物
 - 磁盘结构：`<用户选的文件夹>\photo-book\{相册名}\相册数据.json + 照片\0001.jpg`；根目录还有 `我的模板.json` 和 `先看我-说明.txt`
 - 权限：浏览器重启后要在点击手势里「重新连接」（授权框选「每次访问时允许」即可长期免点）；文件夹被移动/改名 = `folder-missing`，引导「重新指认文件夹」，数据不丢
 - **合并只走 `runSync` 一条路**（首次启用迁移、重新连接、重新指认、换电脑载入全用同一套规则）：同 id 以文件夹为准；仅文件夹有 → 载入；仅名字撞 → 后并入的改名。改这块前先读 `docs/` 下的文件夹模式设计文档（仅本地）
+- **切换文件夹 = 整套书架切换，不合并**（`runSync({ switchFolder: true })`）：已连接时再选另一个文件夹，只载入新文件夹里的相册，当前书架上的相册一个都不搬过去；旧相册仍留在原文件夹和 IndexedDB 里，重新选回原文件夹就能看到。书架靠 `folderProjectIds` 名单过滤（`getShelfProjects`），旧文件夹的相册不上书架、不参与合并、也不算「被手动删掉」；`getAllProjects` 仍返回全部（照片清理、同步比对必须用全局视图）
 - 迁移后**验证磁盘写入成功才**从 IndexedDB 清照片 blob（verifiedIds）；孤儿照片不后台清理，而是在**点预览时**清（当前相册不再引用的磁盘文件 + 全局无人引用的记录，见「数据模型与单位」的预览清理）
 - 在网站上删除相册 = 连磁盘数据一起删（先弹窗确认；不进回收站）
 

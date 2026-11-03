@@ -172,8 +172,8 @@ export default function ImageCropper({ element, imageUrl, onConfirm, onClose }: 
   };
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-xl p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div ref={overlayRef} className="modal-backdrop-in fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="modal-panel-in bg-white rounded-xl p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold mb-4">裁剪图片</h3>
 
         {/* 取景框。照片比框大，溢出的部分被裁掉 —— 最终就显示框里这一块 */}

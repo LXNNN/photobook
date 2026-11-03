@@ -1,16 +1,13 @@
 import { Zip, ZipPassThrough, strToU8, strFromU8, unzipSync } from 'fflate';
 import type { Project } from '@/types';
 import { collectAssetIds } from '@/engine/drawPageContent';
-import {
-  getAllProjects,
-  getAllCustomTemplates,
-  type CustomTemplateRecord,
-} from './storage';
+import { getAllCustomTemplates, type CustomTemplateRecord } from './storage';
 import { getImageAsset, saveImageAsset } from './assetStore';
 import {
   ensureAlbumFolder,
   getAlbumFolderName,
   getImageLocations,
+  getShelfProjects,
   isFolderConnected,
   persistProject,
 } from './folderLibrary';
@@ -129,7 +126,8 @@ function dateStamp(): string {
 export async function exportAllProjects(
   onProgress?: (done: number, total: number) => void
 ): Promise<{ blob: Blob; filename: string; templateCount: number }> {
-  const projects = await getAllProjects();
+  // 只打包当前书架（当前文件夹）的相册；换文件夹前留下的旧相册不混进来
+  const projects = await getShelfProjects();
   const templates = await getAllCustomTemplates();
   if (projects.length === 0 && templates.length === 0) {
     throw new Error('书架上一本相册都没有，也没有自定义模板，没有可导出的内容');
@@ -308,7 +306,7 @@ export async function importBackups(
 
   // 「两份都留」时要起新名字。名字从库里现取一次，同一个 Set 一路 add 下去，
   // 这样一次导入好几本之间也不会互相撞。
-  const takenNames = new Set((await getAllProjects()).map((p) => p.name));
+  const takenNames = new Set((await getShelfProjects()).map((p) => p.name));
   /** 撞车的那本改名成「XX（导入）」。已经有同名的就叫「XX（导入2）」，再往后顺延 */
   const importedName = (base: string): string => {
     let name = `${base}（导入）`;
