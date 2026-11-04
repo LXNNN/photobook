@@ -9,10 +9,10 @@
  * 「氛围感设计」卡片置灰、显示「新模板制作中，敬请期待」；本地开发
  * （npm run dev）保持开放，方便继续做模板和调试。
  *
- * 所以这里按构建模式判断：dev = 开放，build = 置灰。
- * 想全面开放时，直接改成 true 即可（线上重新构建部署）。
+ * 2026-11-04 起全面开放（本地和线上构建都开）。
+ * 想再藏起来就改回 import.meta.env.DEV（或直接 false），实现别删。
  */
-export const ATMOSPHERE_STYLE_ENTRY_ENABLED = import.meta.env.DEV;
+export const ATMOSPHERE_STYLE_ENTRY_ENABLED = true;
 
-/** 氛围感入口置灰时卡片上的提示文案 */
+/** 氛围感入口置灰时卡片上的提示文案（入口已开放，留着以后隐藏时用） */
 export const ATMOSPHERE_STYLE_COMING_SOON = '新模板制作中，敬请期待';
