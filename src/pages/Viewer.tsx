@@ -14,9 +14,11 @@ import { ensureFolderReady } from '@/utils/folderLibrary';
 import {
   exportImagesZip,
   spreadGroups,
+  spreadImageGroups,
   SHOW_IMAGE_EXPORT_ENTRY,
   type ImageExportMode,
 } from '@/utils/exportImages';
+import { exportPrintVersion, SHOW_PRINT_EXPORT_ENTRY } from '@/utils/printExport';
 import { downloadBlob } from '@/utils/backup';
 import { mmToPx } from '@/utils/units';
 import { drawPageContent, collectAssetIds, ensureStaticBackgroundsLoaded } from '@/engine/drawPageContent';
@@ -702,6 +704,31 @@ export default function Viewer() {
     }
   }
 
+  // 导出印刷版（打印社胶装要求）：内页 A4 + 封面展开 A3+，打成一个 zip。
+  // 和上面的普通 PDF 导出完全独立，原来的导出不受影响。
+  async function handleExportPrint() {
+    if (!project || exporting) return;
+    setExporting(true);
+    setExportProgress({ done: 0, total: project.pages.length });
+
+    try {
+      const { blob, filename } = await exportPrintVersion(project, (done, total) =>
+        setExportProgress({ done, total })
+      );
+      downloadBlob(blob, filename);
+    } catch (err) {
+      console.error('导出印刷版失败:', err);
+      alert(
+        err instanceof Error && err.message === '这本相册没有内页，无法导出印刷版'
+          ? err.message
+          : '导出失败，请重试'
+      );
+    } finally {
+      setExporting(false);
+      setExportProgress(null);
+    }
+  }
+
   // 导出图片（单面 / 双面）→ zip 打包下载
   async function handleExportImage(mode: ImageExportMode) {
     if (!project || exporting) return;
@@ -723,9 +750,11 @@ export default function Viewer() {
   }
 
   // ===== 导出的张数（菜单里直接告诉她会得到几张）=====
-  // 用 project.pages 而不是 pageImages：万一某页的图没生成出来，页码也还是对的
+  // 用 project.pages 而不是 pageImages：万一某页的图没生成出来，页码也还是对的。
+  // 双面图片导出把封面和封底拼成一张，所以张数按 spreadImageGroups 算；
+  // 预览页自己的跨页仍走 spreadGroups。
   const pageCount = project?.pages.length ?? 0;
-  const spreadCount = spreadGroups(pageCount).length;
+  const spreadCount = spreadImageGroups(pageCount).length;
 
   // ===== 闭合态居中 =====
   // 闭合态：封面单独在右半，平移 -W/4 让封面居中
@@ -887,6 +916,27 @@ export default function Viewer() {
                   >
                     📄 导出 PDF（打印用）
                   </button>
+                  {/* 印刷版：打印社胶装要求 —— 内页 A4、封面和封底拼成一张 A3+。
+                      单独一个入口，和上面的普通 PDF 导出互不影响。
+                      入口开关在 utils/printExport.ts（SHOW_PRINT_EXPORT_ENTRY，现为隐藏）。 */}
+                  {SHOW_PRINT_EXPORT_ENTRY && (
+                    <>
+                      <div className="my-1 border-t border-gray-100" />
+                      <button
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          void handleExportPrint();
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-amber-50 transition-colors"
+                        title="内页 A4（不含封面/封底），封面和封底拼成一张 A3+，打成一个 zip"
+                      >
+                        🖨️ 印刷版（A4 内页 + A3+ 封面）
+                        <span className="block text-xs text-gray-400 mt-0.5">
+                          内页 A4，封面/封底拼成 A3+，打成一个 zip
+                        </span>
+                      </button>
+                    </>
+                  )}
                   {/* 图片导出两项（开关在 utils/exportImages.ts，现为开放；藏起来就改 false） */}
                   {SHOW_IMAGE_EXPORT_ENTRY && (
                     <>

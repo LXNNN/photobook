@@ -12,8 +12,9 @@ import { spreadGroups } from './spread';
  *
  * 两种方式：
  * - 单面：一页一张
- * - 双面：按预览页翻开的跨页规则拼成一排 —— 封面单独、[2,3]、[4,5]…、末页落单
- *   时也单独一张（规则见 spreadGroups）。两页中间压一条灰线当书缝，一眼看出是摊开的两页。
+ * - 双面：封面和封底拼成一张（封底在左、封面在右），其余按阅读跨页 [2,3]、[4,5]…
+ *   拼成一排（分组规则见 spreadImageGroups）。两页中间压一条灰线当书缝，
+ *   一眼看出是摊开的两页。
  *
  * 渲染走 drawPageContent（和 PDF 导出、预览页同一份绘制实现）、300dpi + JPEG，
  * 和 PDF 里的每一页同规格 —— PDF 里是什么样，导出的图就是什么样。
@@ -44,17 +45,42 @@ export const SHOW_IMAGE_EXPORT_ENTRY = true;
 
 /**
  * 跨页分组（[0]、[1,2]、[3,4]…，偶数页数时末页落单）的唯一实现在
- * utils/spread.ts —— 预览页、双面导出、智能排版、编辑器四处在共用。
+ * utils/spread.ts —— 预览页、智能排版、编辑器等多处在共用。
  * 这里 re-export 保持原有 import 路径可用。
  */
 export { spreadGroups };
 
-/** 图片文件名：一页的写「第01页.jpg」，两页拼的写「第02-03页.jpg」（页码从 1 数起，和预览页顶栏一致） */
+/**
+ * 双面图片导出的分组：封面和封底拼成一张，其余按阅读跨页 [1,2]、[3,4]…
+ *
+ * 拼法跟印刷版封面一致：封底在左、封面在右（从书外面看的样子），
+ * 所以返回的分组是 [末页下标, 0]。其它跨页的左右顺序就是阅读顺序。
+ *
+ * 预览页仍用 spreadGroups（封面单独、末页落单），这里只给图片导出用。
+ * 相册总页数正常情况下是偶数；奇数时退回原分组（首尾不合并，避免拆散跨页）。
+ */
+export function spreadImageGroups(total: number): number[][] {
+  if (total <= 0) return [];
+  if (total === 1) return [[0]];
+  if (total % 2 === 1) return spreadGroups(total);
+
+  const groups: number[][] = [[total - 1, 0]];
+  for (let i = 1; i < total - 1; i += 2) {
+    groups.push([i, i + 1]);
+  }
+  return groups;
+}
+
+/**
+ * 图片文件名：一页的写「第01页.jpg」，两页拼的写「第02-03页.jpg」
+ * （页码从 1 数起，和预览页顶栏一致）。
+ * 封面+封底那张分组是 [末页, 0]，页码反着写不好认，单独叫「封面-封底.jpg」。
+ */
 function groupFileName(group: number[]): string {
   const pad = (i: number) => String(i + 1).padStart(2, '0');
-  return group.length === 1
-    ? `第${pad(group[0])}页.jpg`
-    : `第${pad(group[0])}-${pad(group[1])}页.jpg`;
+  if (group.length === 1) return `第${pad(group[0])}页.jpg`;
+  if (group[0] > group[1]) return '封面-封底.jpg';
+  return `第${pad(group[0])}-${pad(group[1])}页.jpg`;
 }
 
 /** 把一页画到给定画布上（复用同一张画布时先重置变换，别让上一页的状态残留） */
@@ -88,7 +114,7 @@ export async function exportImagesZip(
 ): Promise<{ blob: Blob; filename: string; count: number }> {
   const pages = project.pages;
   const format = project.format;
-  const groups = mode === 'spread' ? spreadGroups(pages.length) : pages.map((_, i) => [i]);
+  const groups = mode === 'spread' ? spreadImageGroups(pages.length) : pages.map((_, i) => [i]);
   if (groups.length === 0) {
     throw new Error('这本相册还没有页面，没有可导出的内容');
   }

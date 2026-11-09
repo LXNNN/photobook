@@ -114,8 +114,9 @@ npm run preview   # 预览构建产物
 - `currentSpread` 是 `spreadGroups` 的下标，不是页码；`currentPage = spreads[currentSpread][0]`。翻页期间 `markFlipping` 让后台绘制和 Worker 派发让路（1200ms 兜底），动画结束 `finishFlip` 才落页
 - 页面图先渲染成 JPEG blob（`toBlob` + object URL，离开时统一 revoke）：按屏幕显示尺寸 × 1.5 超采样 × DPR 渲染、封顶 150dpi；首屏优先（`FIRST_SCREEN_PAGES`），其余后台画好逐页换 `<img>.src`（不重建书）。每页一张常驻 `<img>` 提前 `decode()`，翻页第一帧才不会撞上 JPEG 解码
 - **别把 `loading` 写进「入场过渡」effect 的依赖**：`setLoading(false)` 会触发 effect 重跑，cleanup 把 `setEntered(true)` 的定时器清掉，书永远 opacity 0（踩过）
-- 「📥 导出」下拉在顶栏：PDF + 图片单面 + 图片双面三项。图片两项的开关是 `SHOW_IMAGE_EXPORT_ENTRY`（`utils/exportImages.ts`，同 Editor 的 `SHOW_BODY_STYLE_ENTRY` 套路）——**2026-10-16 起开放**，想再藏只改那一个值，实现别删。图片导出 300dpi + JPEG 0.95（与 PDF 同规格），zip 用 ZipPassThrough 只封装不压缩（同 `backup.ts` 的做法），跨页中间压一条灰书缝（`SPINE_*` 常量）
-- 双面导出的跨页分组（`spreadGroups`）必须与预览页的跨页规律一致：`[0]`（封面单独）、`[1,2]`、`[3,4]`…、总页数为偶数时末页单独在左。改开本/页序逻辑时两边一起想
+- 「📥 导出」下拉在顶栏：PDF + 图片单面 + 图片双面（印刷版入口现为隐藏）。图片两项的开关是 `SHOW_IMAGE_EXPORT_ENTRY`（`utils/exportImages.ts`，同 Editor 的 `SHOW_BODY_STYLE_ENTRY` 套路）——**2026-10-16 起开放**，想再藏只改那一个值，实现别删。图片导出 300dpi + JPEG 0.95（与 PDF 同规格），zip 用 ZipPassThrough 只封装不压缩（同 `backup.ts` 的做法），跨页中间压一条灰书缝（`SPINE_*` 常量）
+- **印刷版导出（2026-11-09 加，打印社胶装要求）**：`utils/printExport.ts`，独立于普通 PDF 导出。内页去掉封面/封底，每页按宽度等比放大到 A4（上下各裁约 0.5mm，避免留白）；封面和封底各放大成 A4，封底在左、封面在右，居中放进一张 **A3+ 横版 483×329**（两张 A4 并排 420×297，竖版 329 宽放不下），书脊先按 0（两页直接相邻）。两个 PDF 打成一个 zip。入口开关 `SHOW_PRINT_EXPORT_ENTRY` **现为 false（按钮隐藏）**，想开放改 true，实现和 `handleExportPrint` 都别删。改这里先读文件顶部注释。
+- 双面**图片**导出用 `spreadImageGroups`（`utils/exportImages.ts`）：封面和封底拼成一张（封底在左、封面在右，分组是 `[末页, 0]`，文件名 `封面-封底.jpg`），其余按阅读跨页 `[1,2]`、`[3,4]`…。预览页/PDF 仍用 `spreadGroups`（`[0]` 封面单独、`[1,2]`…、偶数页时末页落单）。两者是两套分组，别为了统一去改全局 `spreadGroups`（会让预览页和编辑器错位）；菜单里的「双面 N 张」要用 `spreadImageGroups` 算
 - 闭合态/摊开态的投影、书脊、居中偏移是精细调过的视觉状态，改动前先读懂 `Viewer.tsx` 里的注释（合起态是镜像不是重合、摊开投影的亮灭时机与书脊相反）
 - 放大镜不再重建书：`magnified` 只改 `bookSize`（铺满窗口）和黑幕层级，翻页动画跟着新尺寸走；点书页外或 ESC 退出（`SpreadZoom` 按钮层用 `data-magnify-chrome` 排除）
 
