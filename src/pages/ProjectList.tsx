@@ -641,7 +641,9 @@ export default function ProjectList() {
 
       </div>
 
-      {/* 右侧文字区 - 杂志风格（响应式） */}
+      {/* 右侧文字区 - 杂志风格（响应式）。
+          short: 是「窗口高度 ≤700px」的变体（tailwind.config.js）：小分辨率屏幕上
+          插画会被挤得盖住下面的按钮，直接不显示 */}
       <div className="w-[280px] sm:w-[320px] md:w-[360px] lg:w-[380px] flex-shrink-0 p-4 sm:p-6 md:p-7 lg:p-8 bg-[#ede8df] flex flex-col overflow-hidden">
         {/* 顶部小标签 */}
         <div className="text-[10px] sm:text-xs text-gray-400 mb-1 sm:mb-2 tracking-wider">MY PHOTO BOOK SHELF</div>
@@ -678,10 +680,11 @@ export default function ProjectList() {
 
         {/* 装饰插画：书架女孩（自适应填充中间剩余空间） */}
         <div className="flex-1 flex items-center justify-center py-2 sm:py-4 min-h-0">
+          {/* 小分辨率（窗口高度 ≤700px）不显示：插画会把下面的按钮盖住 */}
           <img
             src={bookshelfGirl}
             alt="书架女孩"
-            className="w-full max-w-[160px] sm:max-w-[180px] md:max-w-[200px] lg:max-w-xs object-contain"
+            className="w-full max-w-[160px] sm:max-w-[180px] md:max-w-[200px] lg:max-w-xs object-contain short:hidden"
             style={{ mixBlendMode: 'multiply' }}
           />
         </div>
