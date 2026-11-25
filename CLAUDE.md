@@ -106,6 +106,7 @@ npm run preview   # 预览构建产物
 - 元素回调全部带 `pageIndex`（onSelect/onElementChange/onSwapImages/onTextEdit/onImageCrop）；对齐/换位只限同页；拖拽、缩放、属性面板的 X/Y 都按元素所在页夹紧——照片不能跨中缝
 - 成对增删/排序只走 `spreadLayout` 的 helper：`addPagePair` / `deletePagePair` / `movePages` 配 `insertAfterSpread` / `appendPairIndex` / `movePairBefore` / `anchorAfterDelete`。成对操作天然保持总页数奇偶；别手算下标，算错就把跨页劈开
 - 左侧缩略图是 `SpreadThumbnail`（1~2 个 `PageCanvas`）。封面/结尾落单页居中显示、没有删除 ×、不可拖拽；右键菜单只显示可插入的那一侧（封面没有「上方」、结尾落单页没有「下方」）
+- **空白相册（2026-11-25 加）**：书架「+ 空白相册」创建的 `Project` 带 `isBlankAlbum: true`，创建时直接是「封面 + 空白尾页」两页（之后成对添加正文页会插在尾页前面，总页数永远是偶数）。左侧缩略图右键的「📄 添加页尾」**只对空白相册且总页数为奇数时显示**——在末尾追加一页，让总页数变偶数、末页单独落单成为尾页；已有尾页时不给（再追加会把尾页和前一页挤成一对）。普通相册必须保持成对增删，别把这个菜单项放出去。老的空白相册没有标记，编辑器加载时用 `utils/blankAlbum.ts` 的 `looksLikeBlankAlbum`（没套过模板、没有照片元素、纯色背景）认一次并 dispatch `markBlankAlbum` 写回数据，之后套模板/加照片也不影响
 
 ### 预览页（src/pages/Viewer.tsx + 自写 CSS 3D 翻页）
 

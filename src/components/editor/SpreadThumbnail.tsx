@@ -20,6 +20,11 @@ interface Props {
   onDelete?: () => void;
   onAddPairBefore?: () => void;
   onAddPairAfter?: () => void;
+  /**
+   * 空白相册专用：在最末尾追加一页空白尾页（只在还没有独立尾页时给）。
+   * 普通相册必须成对添加页面，不传这个就不会出现菜单项。
+   */
+  onAppendEndingPage?: () => void;
   /** 只有成对的两页能拖动；落单页拖不动 */
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
@@ -41,6 +46,7 @@ export default function SpreadThumbnail({
   onDelete,
   onAddPairBefore,
   onAddPairAfter,
+  onAppendEndingPage,
   draggable,
   onDragStart,
   onDragOver,
@@ -70,11 +76,16 @@ export default function SpreadThumbnail({
     setMenuOpen(true);
   };
 
-  const hasMenu = Boolean(onAddPairBefore || onAddPairAfter);
+  const hasMenu = Boolean(onAddPairBefore || onAddPairAfter || onAppendEndingPage);
 
+  // 落单组只有两种：第一页是封面、下标 > 0 的最后一页是页尾 —— 标出来，
+  // 不然用户看到单独的页面不知道它是干什么的（2026-11-25）
+  const isLonePage = pages.length === 1;
   const label = pages.length > 1
     ? `第 ${startIndex + 1}–${startIndex + pages.length} 页`
-    : `第 ${startIndex + 1} 页`;
+    : startIndex === 0
+      ? '第 1 页（封面）'
+      : `第 ${startIndex + 1} 页（页尾）`;
 
   // 宽度由内容（1~2 页 + 中缝）撑开，边框才能紧贴缩略图，不留缝
   return (
@@ -105,8 +116,13 @@ export default function SpreadThumbnail({
         ))}
       </div>
 
-      <div className={`absolute bottom-0 left-0 right-0 px-2 py-1 text-xs ${
-        active ? 'bg-amber-600 text-white' : 'bg-black/40 text-white opacity-0 group-hover:opacity-100'
+      {/* 封面 / 页尾的标签一直显示（单页卡片窄，字号小一号才放得下）；成对页保持悬停显示 */}
+      <div className={`absolute bottom-0 left-0 right-0 py-1 ${
+        isLonePage ? 'px-1 text-[10px]' : 'px-2 text-xs'
+      } ${
+        active
+          ? 'bg-amber-600 text-white'
+          : `bg-black/40 text-white ${isLonePage ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`
       }`}>
         {label}
       </div>
@@ -121,7 +137,7 @@ export default function SpreadThumbnail({
         </button>
       )}
 
-      {/* 右键菜单：新建总是成对 */}
+      {/* 右键菜单：普通相册新建总是成对；空白相册多一个「添加页尾」 */}
       {menuOpen && (
         <div
           className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 py-2 w-fit"
@@ -142,6 +158,14 @@ export default function SpreadThumbnail({
               className="block px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 transition-colors whitespace-nowrap"
             >
               ⬇️ 在下方新建一对
+            </button>
+          )}
+          {onAppendEndingPage && (
+            <button
+              onClick={() => { onAppendEndingPage(); setMenuOpen(false); }}
+              className="block px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 transition-colors whitespace-nowrap"
+            >
+              📄 添加页尾
             </button>
           )}
         </div>

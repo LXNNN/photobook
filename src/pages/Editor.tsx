@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppSelector, useAppDispatch, store } from '@/store';
-import { setCurrentProject, addElement, updateElement, deleteElement, addPagePair, deletePagePair, movePages, updateProjectName, swapImages, pushHistory, undo, clearHistory, setBodyStyle } from '@/store/projectSlice';
+import { setCurrentProject, addElement, updateElement, deleteElement, addPage, addPagePair, deletePagePair, movePages, updateProjectName, swapImages, pushHistory, undo, clearHistory, setBodyStyle, markBlankAlbum } from '@/store/projectSlice';
 import { selectElement, multiSelectElement, clearSelection, setZoom, setPan, resetEditor, setCurrentPage as setCurrentPageAction, setActivePage } from '@/store/editorSlice';
 import { setMode } from '@/store/uiSlice';
 import { buildSpreadPages, anchorOf, spreadGroupAt, spreadAnchors, findElementPage, insertAfterSpread, appendPairIndex, movePairBefore, anchorAfterDelete } from '@/utils/spreadLayout';
@@ -29,6 +29,7 @@ import {
 } from '@/utils/bodyText';
 import { cleanupUnusedPhotos } from '@/utils/photoCleanup';
 import { ensureFontsLoaded, fontsReady } from '@/utils/fonts';
+import { isBlankAlbum, looksLikeBlankAlbum } from '@/utils/blankAlbum';
 
 // 启动守卫在 StrictMode 下会跑两遍，提示只弹一次
 let folderGuardAlerted = false;
@@ -190,6 +191,16 @@ export default function Editor() {
       }
     })();
   }, [projectId, dispatch, navigate]);
+
+  // 老空白相册的数据里没有 isBlankAlbum 标记（功能上线前建的）：按「没套过模板、
+  // 没有照片、纯色背景」识别一次，补上标记 —— 自动保存会把它写进相册数据。
+  // 只认一次：标记存在后，之后套了模板、加了照片，右键「添加页尾」也还在。
+  useEffect(() => {
+    if (!project || project.id !== projectId) return;
+    if (looksLikeBlankAlbum(project)) {
+      dispatch(markBlankAlbum());
+    }
+  }, [project, projectId, dispatch]);
 
   /**
    * 缩放到「整个跨页刚好放进画布区域」并居中。
@@ -641,6 +652,19 @@ export default function Editor() {
     dispatch(setCurrentPageAction(atIndex));
   };
 
+  /**
+   * 空白相册「添加页尾」：在最后追加一页空白页。
+   * 原本总页数是奇数（还没有独立尾页），加一页变偶数，最后一页自然单独落单 = 页尾。
+   * 只追加、不在中间插单页 —— 中间插单页会把它后面所有跨页的左右配对整体挪一位。
+   */
+  const handleAppendEndingPage = () => {
+    flushEditingText();
+    const newIndex = project.pages.length; // 追加后新页的下标
+    dispatch(pushHistory());
+    dispatch(addPage({ afterIndex: project.pages.length - 1 }));
+    dispatch(setCurrentPageAction(newIndex));
+  };
+
   const handleDeletePair = (anchor: number) => {
     const group = spreadGroupAt(anchor, project.pages.length);
     if (group.length !== 2) return;
@@ -890,6 +914,13 @@ export default function Editor() {
                     // 封面永远是第一页，「上方新建」无处可插
                     onAddPairBefore={anchor > 0 ? () => handleAddPairAt(anchor) : undefined}
                     onAddPairAfter={isEndingLone ? undefined : () => handleAddPairAt(insertAfterSpread(anchor, project.pages.length))}
+                    // 空白相册 + 还没有独立尾页（奇数页）才给「添加页尾」；
+                    // 已有尾页时再追加一页会把它和前一页挤成一对，反而没有尾页了
+                    onAppendEndingPage={
+                      isBlankAlbum(project) && project.pages.length % 2 === 1
+                        ? handleAppendEndingPage
+                        : undefined
+                    }
                     draggable={paired}
                     isDragOver={dragOverAnchor === anchor && dragAnchor !== anchor}
                     onDragStart={(e) => {

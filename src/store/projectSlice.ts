@@ -64,7 +64,14 @@ export const projectSlice = createSlice({
         id: generateId(),
         name: action.payload.name,
         format,
+        // 空白相册从「封面 + 空白尾页」开始：之后点「+ 添加页面」加的是成对的正文页，
+        // 插在尾页前面，总页数永远是偶数、尾页永远单独落单（不会出现没有页尾的情况）
         pages: [
+          {
+            id: generateId(),
+            background: { type: 'color', value: '#ffffff' },
+            elements: [],
+          },
           {
             id: generateId(),
             background: { type: 'color', value: '#ffffff' },
@@ -76,9 +83,19 @@ export const projectSlice = createSlice({
         version: 1,
         // 空白相册在新建时就定好风格，编辑器里的模板面板和右侧配置栏都按它过滤
         styleId: action.payload.styleId,
+        isBlankAlbum: true,
       };
       state.current = newProject;
       state.list.unshift(newProject);
+    },
+    /**
+     * 补写「这是空白相册」标记：功能上线前建的老空白相册数据里没有这个字段，
+     * 编辑器识别到之后调一次，随自动保存落盘（之后套模板/加照片也不影响）。
+     */
+    markBlankAlbum(state) {
+      if (!state.current) return;
+      state.current.isBlankAlbum = true;
+      state.current.updatedAt = Date.now();
     },
     updateProjectName(state, action: PayloadAction<string>) {
       if (state.current) {
@@ -276,6 +293,7 @@ export const {
   setCurrentProject,
   setProjectList,
   createProject,
+  markBlankAlbum,
   updateProjectName,
   addPage,
   deletePage,

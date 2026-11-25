@@ -17,6 +17,12 @@ export interface Project {
   bodyColor?: string;
   /** 相册风格：经典图文排版 / 氛围感设计。不填 = classic（老相册） */
   styleId?: AlbumStyleId;
+  /**
+   * 空白相册（书架「+ 空白相册」创建）：创建时就是「封面 + 空白尾页」两页，
+   * 编辑器左侧缩略图右键提供「添加页尾」。不填 = 智能生成的老相册 / 功能上线前的相册。
+   * 老的空白相册由 utils/blankAlbum.ts 识别一次并补写这个标记。
+   */
+  isBlankAlbum?: boolean;
 }
 
 export interface BookFormat {
