@@ -658,6 +658,8 @@ export default function Editor() {
    * 只追加、不在中间插单页 —— 中间插单页会把它后面所有跨页的左右配对整体挪一位。
    */
   const handleAppendEndingPage = () => {
+    // 已有尾页（偶数页）时菜单项是灰的，这里兜底：再加一页会把尾页挤成正文页
+    if (project.pages.length % 2 === 0) return;
     flushEditingText();
     const newIndex = project.pages.length; // 追加后新页的下标
     dispatch(pushHistory());
@@ -914,13 +916,10 @@ export default function Editor() {
                     // 封面永远是第一页，「上方新建」无处可插
                     onAddPairBefore={anchor > 0 ? () => handleAddPairAt(anchor) : undefined}
                     onAddPairAfter={isEndingLone ? undefined : () => handleAddPairAt(insertAfterSpread(anchor, project.pages.length))}
-                    // 空白相册 + 还没有独立尾页（奇数页）才给「添加页尾」；
-                    // 已有尾页时再追加一页会把它和前一页挤成一对，反而没有尾页了
-                    onAppendEndingPage={
-                      isBlankAlbum(project) && project.pages.length % 2 === 1
-                        ? handleAppendEndingPage
-                        : undefined
-                    }
+                    // 空白相册的右键里始终保留「添加页尾」；已经有尾页（偶数页）时
+                    // 置灰说明，别直接藏起来 —— 她明确要求这个入口要保留
+                    onAppendEndingPage={isBlankAlbum(project) ? handleAppendEndingPage : undefined}
+                    appendEndingPageDisabled={project.pages.length % 2 === 0}
                     draggable={paired}
                     isDragOver={dragOverAnchor === anchor && dragAnchor !== anchor}
                     onDragStart={(e) => {

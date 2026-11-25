@@ -64,14 +64,10 @@ export const projectSlice = createSlice({
         id: generateId(),
         name: action.payload.name,
         format,
-        // 空白相册从「封面 + 空白尾页」开始：之后点「+ 添加页面」加的是成对的正文页，
-        // 插在尾页前面，总页数永远是偶数、尾页永远单独落单（不会出现没有页尾的情况）
+        // 空白相册从封面一页开始：缺尾页时右键「添加页尾」补一页（页数变偶数，
+        // 最后一页单独落单就是尾页）。之后加正文页走成对的「+ 添加页面」，
+        // 一对插在尾页前面，尾页不会再被配对掉。
         pages: [
-          {
-            id: generateId(),
-            background: { type: 'color', value: '#ffffff' },
-            elements: [],
-          },
           {
             id: generateId(),
             background: { type: 'color', value: '#ffffff' },

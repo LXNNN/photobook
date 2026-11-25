@@ -21,10 +21,15 @@ interface Props {
   onAddPairBefore?: () => void;
   onAddPairAfter?: () => void;
   /**
-   * 空白相册专用：在最末尾追加一页空白尾页（只在还没有独立尾页时给）。
+   * 空白相册专用：在最末尾追加一页空白尾页。
    * 普通相册必须成对添加页面，不传这个就不会出现菜单项。
    */
   onAppendEndingPage?: () => void;
+  /**
+   * 已经有独立尾页（总页数偶数）：菜单项保留但置灰。
+   * 再加一页会把尾页和前一页挤成一对，反而没有尾页了。
+   */
+  appendEndingPageDisabled?: boolean;
   /** 只有成对的两页能拖动；落单页拖不动 */
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
@@ -47,6 +52,7 @@ export default function SpreadThumbnail({
   onAddPairBefore,
   onAddPairAfter,
   onAppendEndingPage,
+  appendEndingPageDisabled,
   draggable,
   onDragStart,
   onDragOver,
@@ -163,9 +169,15 @@ export default function SpreadThumbnail({
           {onAppendEndingPage && (
             <button
               onClick={() => { onAppendEndingPage(); setMenuOpen(false); }}
-              className="block px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 transition-colors whitespace-nowrap"
+              disabled={appendEndingPageDisabled}
+              title={appendEndingPageDisabled ? '这本相册已经有页尾了' : undefined}
+              className={`block px-3 py-1.5 text-sm whitespace-nowrap transition-colors ${
+                appendEndingPageDisabled
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
             >
-              📄 添加页尾
+              📄 添加页尾{appendEndingPageDisabled ? '（已有页尾）' : ''}
             </button>
           )}
         </div>
