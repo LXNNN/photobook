@@ -623,6 +623,10 @@ export default function Editor() {
     return <div className="w-full h-full flex items-center justify-center text-gray-400">加载中...</div>;
   }
 
+  // 空白相册：有标记就算；没有标记的老相册（功能上线前建的）当场按 themeId 认，
+  // 不等补标记的 effect 落盘 —— 打开就能右键
+  const blankAlbum = isBlankAlbum(project) || looksLikeBlankAlbum(project);
+
   // 顶栏跨页导航
   const spreadPageLabel = spreadGroup.length > 1
     ? `第 ${spreadGroup[0] + 1}–${spreadGroup[1] + 1} 页`
@@ -918,7 +922,7 @@ export default function Editor() {
                     onAddPairAfter={isEndingLone ? undefined : () => handleAddPairAt(insertAfterSpread(anchor, project.pages.length))}
                     // 空白相册的右键里始终保留「添加页尾」；已经有尾页（偶数页）时
                     // 置灰说明，别直接藏起来 —— 她明确要求这个入口要保留
-                    onAppendEndingPage={isBlankAlbum(project) ? handleAppendEndingPage : undefined}
+                    onAppendEndingPage={blankAlbum ? handleAppendEndingPage : undefined}
                     appendEndingPageDisabled={project.pages.length % 2 === 0}
                     draggable={paired}
                     isDragOver={dragOverAnchor === anchor && dragAnchor !== anchor}

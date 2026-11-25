@@ -13,17 +13,12 @@ export function isBlankAlbum(project: Project): boolean {
 /**
  * 识别功能上线前建的老空白相册（它们的数据里还没有 isBlankAlbum 标记）。
  *
- * 条件刻意保守：没有任何照片、没套过模板、背景都是纯色。智能生成的相册
- * 每一页都有 templateId，所以不会误判；手动改过的普通相册也基本带着模板 id。
- * 编辑器加载时调一次，识别到就补写标记并随自动保存落盘 —— 之后用户就算
- * 套模板、加照片，标记也还在，右键「添加页尾」不会突然消失。
+ * 空白相册创建时不选主题（themeId 为空），智能生成的相册都是先选了主题才生成
+ * （themeId 一定有）。这个线索不受「套没套模板、放没放照片」影响 —— 她已有的
+ * 空白相册（比如「模板设计经典图文」）套了模板、放了照片也照样认得出来。
+ * 编辑器加载时调一次，识别到就补写标记并随自动保存落盘。
  */
 export function looksLikeBlankAlbum(project: Project): boolean {
   if (project.isBlankAlbum !== undefined) return false;
-  return project.pages.every(
-    (page) =>
-      !page.templateId &&
-      page.background.type === 'color' &&
-      !page.elements.some((el) => el.type === 'image')
-  );
+  return !project.themeId;
 }
